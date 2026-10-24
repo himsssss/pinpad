@@ -113,8 +113,8 @@ export function App() {
     <div className="app">
       <Header onSearch={() => setSearching(true)} />
       <div className="app-body">
-        <Sidebar />
         <Toolbar />
+        <Sidebar />
         <Canvas />
       </div>
       {searching && <SearchDialog onClose={() => setSearching(false)} />}

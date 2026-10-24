@@ -157,7 +157,8 @@ button {
   justify-content: space-between;
   padding: 10px 0 8px;
   position: relative;
-  z-index: 10;
+  /* Above the folders sidebar to its right, so color/icon popovers open over it. */
+  z-index: 12;
   user-select: none;
 }
 .toolbar-tools { display: flex; flex-direction: column; align-items: center; gap: 2px; overflow-y: auto; }
