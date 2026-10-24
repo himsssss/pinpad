@@ -170,6 +170,10 @@ export async function initStore() {
   let doc = await load<Doc>('doc').catch(() => undefined);
   const savedUI = loadUI();
   const flushPending = () => persistTimer !== undefined && flush();
+  // The macOS app calls this before quitting so the last edit isn't lost.
+  (window as Window & { __flushSave?: () => Promise<void> }).__flushSave = async () => {
+    if (persistTimer !== undefined) await flush();
+  };
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushPending());
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getState, openBoard, redo, select, setUI, startEditing, undo } from './store';
+import { getState, openBoard, redo, select, setUI, startEditing, undo, useStore } from './store';
 import { copySelection, deleteSelection, duplicateSelection, nudgeSelection, paste, selectAll } from './actions';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
@@ -11,6 +11,12 @@ const isTypingTarget = (t: EventTarget | null) =>
 
 export function App() {
   const [searching, setSearching] = useState(false);
+  const boardTitle = useStore((s) => (s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title));
+
+  // The macOS app shows this as its window title.
+  useEffect(() => {
+    document.title = boardTitle ? `${boardTitle} – Milanote Clone` : 'Milanote Clone';
+  }, [boardTitle]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -72,6 +78,19 @@ export function App() {
         nudgeSelection(dx, dy);
       }
     };
+    // The macOS app's Edit › Undo/Redo menu items call these. Plain text fields (like the
+    // board title) keep their native text undo.
+    const history = (direction: 'undo' | 'redo') => () => {
+      if (isTypingTarget(document.activeElement) && !getState().ui.editingId) {
+        document.execCommand(direction);
+        return;
+      }
+      if (getState().ui.editingId) setUI({ editingId: null, editPoint: null });
+      if (direction === 'undo') undo();
+      else redo();
+    };
+    Object.assign(window, { __undo: history('undo'), __redo: history('redo') });
+
     const onCopy = (e: ClipboardEvent) => !isTypingTarget(e.target) && copySelection(e);
     const onPaste = (e: ClipboardEvent) => !isTypingTarget(e.target) && paste(e);
     window.addEventListener('keydown', onKey);
