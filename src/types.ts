@@ -79,6 +79,8 @@ export interface Board {
 export interface Folder {
   id: string;
   name: string;
+  /** Containing folder; top-level folders have none. */
+  parentId?: string;
   order: number;
   collapsed?: boolean;
 }
