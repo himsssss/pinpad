@@ -16,7 +16,7 @@ export function App() {
 
   // The macOS app shows this as its window title.
   useEffect(() => {
-    document.title = boardTitle ? `${boardTitle} – Milanote Clone` : 'Milanote Clone';
+    document.title = boardTitle ? `${boardTitle} – Pinpad` : 'Pinpad';
   }, [boardTitle]);
 
   useEffect(() => {

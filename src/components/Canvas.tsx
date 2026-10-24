@@ -11,7 +11,7 @@ import { LinesLayer } from './LinesLayer';
 
 const clampZoom = (z: number) => Math.min(3, Math.max(0.2, z));
 
-export const TOOL_MIME = 'application/x-milanote-tool';
+export const TOOL_MIME = 'application/x-pinpad-tool';
 
 export function Canvas() {
   const boardId = useStore((s) => s.ui.boardId);

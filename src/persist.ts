@@ -1,3 +1,4 @@
+// Kept from the app's original name: renaming it would hide boards already saved.
 const DB_NAME = 'milanote-clone';
 const STORE = 'kv';
 

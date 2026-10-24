@@ -309,7 +309,7 @@ export function seedDoc(): Doc {
 
   const colId = uid();
   const c1 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, html: '<div>Columns keep related cards together.</div>' });
-  const c2 = add({ id: uid(), type: 'link', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, url: 'https://milanote.com', title: 'Milanote — the tool for organizing creative projects' });
+  const c2 = add({ id: uid(), type: 'link', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, url: 'https://en.wikipedia.org/wiki/Mood_board', title: 'Mood board — Wikipedia' });
   const c3 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, color: '#ecf9f9', html: '<div>Drag a card out to pull it from the column.</div>' });
   add({ id: colId, type: 'column', boardId: rootId, x: 840, y: 80, w: 300, z: 0, title: 'Ideas', children: [c1, c2, c3] });
 

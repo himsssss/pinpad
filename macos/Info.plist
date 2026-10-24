@@ -3,13 +3,14 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Milanote Clone</string>
+  <string>Pinpad</string>
   <key>CFBundleDisplayName</key>
-  <string>Milanote Clone</string>
+  <string>Pinpad</string>
   <key>CFBundleIdentifier</key>
+  <!-- The original identifier is kept: WebKit stores the boards under it. -->
   <string>local.milanote-clone</string>
   <key>CFBundleExecutable</key>
-  <string>MilanoteClone</string>
+  <string>Pinpad</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

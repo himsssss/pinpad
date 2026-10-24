@@ -135,6 +135,7 @@ export function openBoard(boardId: string) {
 // The document (which can hold images) lives in IndexedDB; the small view state goes to
 // localStorage synchronously so a reload always reopens the board you were on.
 
+// Original name kept so saved view state still loads.
 const UI_KEY = 'milanote-clone:ui';
 let persistTimer: number | undefined;
 

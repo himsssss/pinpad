@@ -9,7 +9,7 @@ function downloadJSON(doc: Doc) {
   const blob = new Blob([JSON.stringify(doc)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `milanote-clone-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `pinpad-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -82,8 +82,8 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           >
             <PanelLeft size={17} />
           </button>
-          <button className="logo" onClick={() => openBoard(rootId)} aria-label="Home">
-            <svg viewBox="0 0 32 32" width="22" height="22"><circle cx="16" cy="16" r="16" fill="#163300" /><path d="M9 22V10l7 7 7-7v12" stroke="#9fe870" strokeWidth="2.6" fill="none" strokeLinejoin="round" strokeLinecap="round" /></svg>
+          <button className="logo" onClick={() => openBoard(rootId)} aria-label="Pinpad home">
+            <svg viewBox="0 0 32 32" width="24" height="24"><circle cx="16" cy="16" r="16" fill="#163300" /><g transform="rotate(35 16 16)" fill="#9fe870"><path d="M12 5h8a1.5 1.5 0 0 1 0 3h-8a1.5 1.5 0 0 1 0-3z" /><path d="M13.2 8h5.6l1 6.5h-7.6z" /><path d="M9.5 14.5h13a1.75 1.75 0 0 1 0 3.5h-13a1.75 1.75 0 0 1 0-3.5z" /><path d="M16 18v9.5" stroke="#9fe870" strokeWidth="1.8" strokeLinecap="round" /></g></svg>
           </button>
           {path.map((b, i) => (
             <span key={b.id} className="crumb">

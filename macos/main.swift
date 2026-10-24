@@ -1,4 +1,4 @@
-// Native macOS shell for the Milanote clone: an AppKit window hosting a WKWebView that
+// Native macOS shell for Pinpad: an AppKit window hosting a WKWebView that
 // loads the built web app from the bundle's Resources/web folder.
 
 import Cocoa
@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 import WebKit
 
 /// Pages are served from a custom scheme so they get a stable origin (IndexedDB and
-/// localStorage persist between launches) without running a local server.
+/// localStorage persist between launches) without running a local server. The scheme keeps
+/// the app's original name: changing it would change the origin and hide saved boards.
 let appScheme = "milanote"
 let startURL = URL(string: "\(appScheme)://app/index.html")!
 
@@ -97,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       backing: .buffered,
       defer: false
     )
-    window.title = "Milanote Clone"
+    window.title = "Pinpad"
     window.minSize = NSSize(width: 640, height: 480)
     window.tabbingMode = .disallowed
     window.contentView = webView
@@ -242,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   private func makeMainMenu() -> NSMenu {
     let main = NSMenu()
-    let name = "Milanote Clone"
+    let name = "Pinpad"
 
     func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
       let menu = NSMenu(title: title)

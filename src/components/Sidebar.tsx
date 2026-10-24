@@ -5,8 +5,8 @@ import { getState, mutate, openBoard, setUI, useStore } from '../store';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
 import { BoardIcon } from './BoardIcon';
 
-const BOARD_MIME = 'application/x-milanote-board';
-const FOLDER_MIME = 'application/x-milanote-folder';
+const BOARD_MIME = 'application/x-pinpad-board';
+const FOLDER_MIME = 'application/x-pinpad-folder';
 
 /** Adds a board to Home (right of everything already there), files it, and opens it. */
 function newProject(folderId?: string) {

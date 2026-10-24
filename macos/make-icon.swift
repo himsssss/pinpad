@@ -25,19 +25,31 @@ func render(_ px: Int) -> Data {
   ctx.fillPath()
   ctx.restoreGState()
 
-  // The "M" mark from the web favicon (a 32-unit design), flipped into CoreGraphics' y-up space.
+  // The pushpin mark, drawn in the same 32-unit, y-down space as the web logo's SVG.
   let unit: CGFloat = 824 / 32
-  func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: 100 + x * unit, y: 924 - y * unit) }
-  ctx.move(to: p(8, 23))
-  ctx.addLine(to: p(8, 9))
-  ctx.addLine(to: p(16, 17))
-  ctx.addLine(to: p(24, 9))
-  ctx.addLine(to: p(24, 23))
-  ctx.setStrokeColor(NSColor(srgbRed: 0.086, green: 0.2, blue: 0, alpha: 1).cgColor)
-  ctx.setLineWidth(3.2 * unit)
-  ctx.setLineJoin(.round)
+  ctx.saveGState()
+  ctx.translateBy(x: 100, y: 924)
+  ctx.scaleBy(x: unit, y: -unit)
+  ctx.translateBy(x: 16, y: 16)
+  ctx.rotate(by: 35 * .pi / 180)
+  ctx.translateBy(x: -16, y: -16)
+  let forest = NSColor(srgbRed: 0.086, green: 0.2, blue: 0, alpha: 1).cgColor
+  ctx.setFillColor(forest)
+  ctx.addPath(CGPath(roundedRect: CGRect(x: 10.5, y: 5, width: 11, height: 3), cornerWidth: 1.5, cornerHeight: 1.5, transform: nil))
+  ctx.move(to: CGPoint(x: 13.2, y: 8))
+  ctx.addLine(to: CGPoint(x: 18.8, y: 8))
+  ctx.addLine(to: CGPoint(x: 19.8, y: 14.5))
+  ctx.addLine(to: CGPoint(x: 12.2, y: 14.5))
+  ctx.closePath()
+  ctx.addPath(CGPath(roundedRect: CGRect(x: 7.75, y: 14.5, width: 16.5, height: 3.5), cornerWidth: 1.75, cornerHeight: 1.75, transform: nil))
+  ctx.fillPath()
+  ctx.setStrokeColor(forest)
+  ctx.setLineWidth(1.8)
   ctx.setLineCap(.round)
+  ctx.move(to: CGPoint(x: 16, y: 18))
+  ctx.addLine(to: CGPoint(x: 16, y: 27.5))
   ctx.strokePath()
+  ctx.restoreGState()
 
   NSGraphicsContext.restoreGraphicsState()
   return rep.representation(using: .png, properties: [:])!

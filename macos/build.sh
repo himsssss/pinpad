@@ -1,9 +1,9 @@
 #!/bin/bash
-# Builds "build/Milanote Clone.app": the web app plus the native Swift shell.
+# Builds "build/Pinpad.app": the web app plus the native Swift shell.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP="build/Milanote Clone.app"
+APP="build/Pinpad.app"
 VERSION=$(node -p "require('./package.json').version")
 
 npm run build
@@ -13,10 +13,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # Universal binary (Apple silicon + Intel).
 for arch in arm64 x86_64; do
-  swiftc -O -swift-version 5 -target "$arch-apple-macos13.3" macos/main.swift -o "build/MilanoteClone-$arch"
+  swiftc -O -swift-version 5 -target "$arch-apple-macos13.3" macos/main.swift -o "build/Pinpad-$arch"
 done
-lipo -create build/MilanoteClone-arm64 build/MilanoteClone-x86_64 -output "$APP/Contents/MacOS/MilanoteClone"
-rm build/MilanoteClone-arm64 build/MilanoteClone-x86_64
+lipo -create build/Pinpad-arm64 build/Pinpad-x86_64 -output "$APP/Contents/MacOS/Pinpad"
+rm build/Pinpad-arm64 build/Pinpad-x86_64
 
 # The icon only changes with make-icon.swift, so it's cached between builds.
 if [[ ! -f build/AppIcon.icns || macos/make-icon.swift -nt build/AppIcon.icns ]]; then
