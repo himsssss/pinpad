@@ -4,6 +4,7 @@ import type { Doc } from '../types';
 import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
+import { MOD, SHIFT } from '../shortcuts';
 
 function downloadJSON(doc: Doc) {
   const blob = new Blob([JSON.stringify(doc)], { type: 'application/json' });
@@ -87,10 +88,10 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           ))}
         </nav>
         <div className="header-actions">
-          <button onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo (⌘Z)"><Undo2 size={18} /></button>
-          <button onClick={redo} disabled={!canRedo} aria-label="Redo" title="Redo (⇧⌘Z)"><Redo2 size={18} /></button>
+          <button onClick={undo} disabled={!canUndo} aria-label="Undo" title={`Undo (${MOD}Z)`}><Undo2 size={18} /></button>
+          <button onClick={redo} disabled={!canRedo} aria-label="Redo" title={`Redo (${SHIFT}${MOD}Z)`}><Redo2 size={18} /></button>
           <span className="header-sep" />
-          <button onClick={onSearch} aria-label="Search" title="Search (⌘K)"><Search size={18} /></button>
+          <button onClick={onSearch} aria-label="Search" title={`Search (${MOD}K)`}><Search size={18} /></button>
           <div className="menu-wrap" ref={menuRef}>
             <button onClick={() => setMenu((m) => !m)} aria-label="Settings"><Settings size={18} /></button>
             {menu && (

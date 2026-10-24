@@ -4,6 +4,7 @@ import type { Board } from '../types';
 import { getState, mutate, openBoard, setUI, useStore } from '../store';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
 import { BoardIcon } from './BoardIcon';
+import { MOD } from '../shortcuts';
 
 const BOARD_MIME = 'application/x-pinpad-board';
 const FOLDER_MIME = 'application/x-pinpad-folder';
@@ -240,7 +241,7 @@ export function Sidebar() {
           <span className="sidebar-icon"><Home size={15} /></span>
           <span className="project-name">Home</span>
         </button>
-        <button className="sidebar-collapse" aria-label="Collapse sidebar" title="Collapse sidebar (⌘\\)" onClick={() => setUI({ sidebarOpen: false })}>
+        <button className="sidebar-collapse" aria-label="Collapse sidebar" title={`Collapse sidebar (${MOD}\\)`} onClick={() => setUI({ sidebarOpen: false })}>
           <ChevronsLeft size={15} />
         </button>
       </div>

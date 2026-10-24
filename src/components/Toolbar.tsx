@@ -9,6 +9,7 @@ import type { ElType, LineEl } from '../types';
 import { getState, mutate, openBoard, select, setUI, startEditing, useStore } from '../store';
 import { BOARD_COLORS, BOARD_ICONS, CARD_COLORS, LINE_COLORS, PEN_COLORS, PEN_SIZES } from '../doc';
 import { tableOps } from './cards/TableCard';
+import { MOD } from '../shortcuts';
 import { addElementAtCenter, addImages, deleteSelection, duplicateSelection } from '../actions';
 import { pickImages } from '../images';
 import { BoardIcon } from './BoardIcon';
@@ -121,7 +122,7 @@ export function Toolbar() {
         className={`tool folders-toggle ${sidebarOpen ? 'active' : ''}`}
         onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
         aria-pressed={sidebarOpen}
-        title={`${sidebarOpen ? 'Minimize' : 'Show'} folders (⌘\\)`}
+        title={`${sidebarOpen ? 'Minimize' : 'Show'} folders (${MOD}\\)`}
       >
         <span className="tool-icon plain">
           {sidebarOpen ? <PanelLeftClose size={17} strokeWidth={1.7} /> : <PanelLeftOpen size={17} strokeWidth={1.7} />}

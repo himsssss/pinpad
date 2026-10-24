@@ -9,21 +9,54 @@
     "typecheck": "tsc",
     "preview": "vite preview",
     "build:mac": "./macos/build.sh",
-    "install:mac": "./macos/install.sh"
-  },
-  "dependencies": {
-    "@fontsource-variable/archivo": "^5.3.0",
-    "@fontsource/inter": "^5.1.0",
-    "immer": "^10.1.1",
-    "lucide-react": "^0.460.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "install:mac": "./macos/install.sh",
+    "desktop": "npm run build && electron .",
+    "build:win": "npm run build && electron-builder --win --x64 --arm64",
+    "icons:win": "python3 desktop/make-icons.py"
   },
   "devDependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource/inter": "^5.1.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.4.11",
+    "electron-builder": "^26.0.12",
+    "immer": "^10.1.1",
+    "lucide-react": "^0.460.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
+  },
+  "description": "Pinpad: boards for notes, images, links and to-dos.",
+  "author": "Himanshu Singh",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "com.pinpad.app",
+    "productName": "Pinpad",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop/assets"
+    },
+    "files": [
+      "desktop/main.cjs",
+      "desktop/assets/icon.png",
+      "dist/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "desktop/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Pinpad",
+      "artifactName": "Pinpad-Setup-${version}-${arch}.${ext}"
+    }
   }
 }
