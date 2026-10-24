@@ -3,6 +3,7 @@ import { getState, openBoard, redo, select, setUI, startEditing, undo, useStore 
 import { copySelection, deleteSelection, duplicateSelection, nudgeSelection, paste, selectAll } from './actions';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
+import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { SearchDialog } from './components/SearchDialog';
 
@@ -24,6 +25,11 @@ export function App() {
       const { ui, doc } = getState();
       const typing = isTypingTarget(e.target);
 
+      if (mod && e.key === '\\') {
+        e.preventDefault();
+        setUI((u) => ({ sidebarOpen: !u.sidebarOpen }));
+        return;
+      }
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setSearching(true);
@@ -107,6 +113,7 @@ export function App() {
     <div className="app">
       <Header onSearch={() => setSearching(true)} />
       <div className="app-body">
+        <Sidebar />
         <Toolbar />
         <Canvas />
       </div>

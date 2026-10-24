@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { Download, PanelLeft, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
-import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
+import { getState, mutate, openBoard, redo, setUI, undo, useStore } from '../store';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
 
@@ -19,6 +19,7 @@ function replaceDoc(doc: Doc) {
     d.rootId = doc.rootId;
     d.boards = doc.boards;
     d.elements = doc.elements;
+    d.folders = doc.folders ?? {};
   });
   openBoard(doc.rootId);
 }
@@ -48,6 +49,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
   const saved = useStore((s) => s.saved);
+  const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const path = boardPath(getState().doc, boardId);
@@ -72,6 +74,14 @@ export function Header({ onSearch }: { onSearch: () => void }) {
     <header className="header">
       <div className="header-row">
         <nav className="breadcrumbs">
+          <button
+            className={`sidebar-toggle ${sidebarOpen ? 'active' : ''}`}
+            onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
+            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            title={`${sidebarOpen ? 'Hide' : 'Show'} folders (⌘\\)`}
+          >
+            <PanelLeft size={17} />
+          </button>
           <button className="logo" onClick={() => openBoard(rootId)} aria-label="Home">
             <svg viewBox="0 0 32 32" width="22" height="22"><circle cx="16" cy="16" r="16" fill="#323b4a" /><path d="M9 22V10l7 7 7-7v12" stroke="#fff" strokeWidth="2.6" fill="none" strokeLinejoin="round" strokeLinecap="round" /></svg>
           </button>

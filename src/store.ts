@@ -92,7 +92,7 @@ export function setUI(patch: Partial<UI> | ((ui: UI) => Partial<UI>)) {
   const p = typeof patch === 'function' ? patch(state.ui) : patch;
   const wasEditing = state.ui.editingId;
   setState({ ui: { ...state.ui, ...p } });
-  if ('views' in p || 'boardId' in p) saveUI();
+  if ('views' in p || 'boardId' in p || 'sidebarOpen' in p) saveUI();
   if (wasEditing && 'editingId' in p && p.editingId !== wasEditing) removeIfEmpty(wasEditing);
 }
 
@@ -140,13 +140,14 @@ let persistTimer: number | undefined;
 
 function saveUI() {
   try {
-    localStorage.setItem(UI_KEY, JSON.stringify({ boardId: state.ui.boardId, views: state.ui.views }));
+    const { boardId, views, sidebarOpen } = state.ui;
+    localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen }));
   } catch {
     // Storage can be unavailable (private mode); the board still works.
   }
 }
 
-function loadUI(): Pick<UI, 'boardId' | 'views'> | undefined {
+function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen'>> | undefined {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? 'null') ?? undefined;
   } catch {
@@ -177,11 +178,14 @@ export async function initStore() {
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushPending());
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();
-  const boardId = savedUI && doc.boards[savedUI.boardId] ? savedUI.boardId : doc.rootId;
+  // Workspaces saved before folders existed.
+  doc.folders ??= {};
+  const boardId = savedUI?.boardId && doc.boards[savedUI.boardId] ? savedUI.boardId : doc.rootId;
   state = {
     doc,
     ui: {
       boardId,
+      sidebarOpen: savedUI?.sidebarOpen ?? true,
       draw: null,
       selection: [],
       editingId: null,

@@ -72,12 +72,22 @@ export interface Board {
   parentId: string | null;
   color: string;
   icon: string;
+  /** Sidebar folder this board is filed in; filing doesn't move it on any canvas. */
+  folderId?: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  order: number;
+  collapsed?: boolean;
 }
 
 export interface Doc {
   rootId: string;
   boards: Record<string, Board>;
   elements: Record<string, El>;
+  folders: Record<string, Folder>;
 }
 
 export interface View {
@@ -87,7 +97,7 @@ export interface View {
 }
 
 export interface DropTarget {
-  kind: 'column' | 'board' | 'trash';
+  kind: 'column' | 'board' | 'trash' | 'folder';
   id: string;
   index?: number;
 }
@@ -102,6 +112,7 @@ export interface DrawMode {
 
 export interface UI {
   boardId: string;
+  sidebarOpen: boolean;
   /** Set while freehand drawing on the board. */
   draw: DrawMode | null;
   selection: string[];

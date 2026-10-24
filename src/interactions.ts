@@ -143,7 +143,7 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
       } else onClick(ev);
       return;
     }
-    finishDrop(ids);
+    finishDrop(ids, origins);
   };
 
   window.addEventListener('pointermove', move);
@@ -154,6 +154,7 @@ function updateDropTarget(ev: PointerEvent, ids: string[]) {
   const doc = getState().doc;
   const dragged = new Set(ids);
   const hasColumn = ids.some((i) => doc.elements[i]?.type === 'column');
+  const hasBoard = ids.some((i) => doc.elements[i]?.type === 'board');
   const onlyLines = ids.every((i) => doc.elements[i]?.type === 'line');
   let target: DropTarget | null = null;
   const overTrash = document.elementsFromPoint(ev.clientX, ev.clientY).some((n) => n.closest('[data-drop-kind="trash"]'));
@@ -173,6 +174,9 @@ function updateDropTarget(ev: PointerEvent, ids: string[]) {
           return r.top + r.height / 2 < ev.clientY;
         }).length;
         target = { kind, id: hostId, index };
+      } else if (kind === 'folder') {
+        if (!hasBoard) continue;
+        target = { kind, id: hostId };
       } else {
         target = { kind, id: hostId };
       }
@@ -183,10 +187,24 @@ function updateDropTarget(ev: PointerEvent, ids: string[]) {
   if (JSON.stringify(prev) !== JSON.stringify(target)) setUI({ dropTarget: target });
 }
 
-function finishDrop(ids: string[]) {
+function finishDrop(ids: string[], origins: Map<string, { x: number; y: number }>) {
   const target = getState().ui.dropTarget;
   setUI({ dropTarget: null });
   if (!target) return;
+  if (target.kind === 'folder') {
+    // Filing a board in a sidebar folder leaves the cards where they were on the canvas.
+    mutate((d) => {
+      for (const id of ids) {
+        const el = d.elements[id];
+        const o = origins.get(id);
+        if (!el || !o || el.type === 'line') continue;
+        el.x = o.x;
+        el.y = o.y;
+        if (el.type === 'board') d.boards[el.targetId].folderId = target.id || undefined;
+      }
+    }, 'pending');
+    return;
+  }
   if (target.kind === 'trash') {
     mutate((d) => deleteElements(d, ids), 'pending');
     select([]);

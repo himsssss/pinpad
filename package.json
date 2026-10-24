@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "typecheck": "tsc",
     "preview": "vite preview",
-    "build:mac": "./macos/build.sh"
+    "build:mac": "./macos/build.sh",
+    "install:mac": "./macos/install.sh"
   },
   "dependencies": {
     "@fontsource/inter": "^5.1.0",

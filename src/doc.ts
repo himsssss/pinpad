@@ -1,4 +1,4 @@
-import type { Board, Doc, El, ElType, LineEl } from './types';
+import type { Board, BoardEl, Doc, El, ElType, LineEl } from './types';
 
 export const uid = () => crypto.randomUUID();
 
@@ -236,6 +236,14 @@ export function moveElementsToBoard(doc: Doc, ids: string[], targetBoardId: stri
   deleteElements(doc, stale);
 }
 
+/** Boards placed directly on Home: the workspace's projects. */
+export function projects(doc: Doc) {
+  return Object.values(doc.elements)
+    .filter((e): e is BoardEl => e.type === 'board' && e.boardId === doc.rootId && !!doc.boards[e.targetId])
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+    .map((e) => doc.boards[e.targetId]);
+}
+
 export function countCards(doc: Doc, boardId: string) {
   return boardElements(doc, boardId).filter((e) => e.type !== 'line').length;
 }
@@ -264,7 +272,10 @@ export function seedDoc(): Doc {
     rootId,
     boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#eaca8b', icon: 'layout' } },
     elements: {},
+    folders: {},
   };
+  const workFolder = uid();
+  doc.folders[workFolder] = { id: workFolder, name: 'Work', order: 1 };
   let z = 0;
   const add = <T extends El>(el: T) => {
     doc.elements[el.id] = { ...el, z: ++z };
@@ -275,7 +286,7 @@ export function seedDoc(): Doc {
   doc.boards[mood.board!.id] = { ...mood.board!, title: 'Moodboard', color: '#dabcea', icon: 'palette' };
   add(mood.el);
   const plan = createElement('board', rootId, 220, 80, 0);
-  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#a9cbc5', icon: 'rocket' };
+  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#a9cbc5', icon: 'rocket', folderId: workFolder };
   add(plan.el);
 
   const welcome = add({
