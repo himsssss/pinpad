@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, FolderPlus, Home, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Home, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
-import { getState, mutate, openBoard, useStore } from '../store';
+import { getState, mutate, openBoard, setUI, useStore } from '../store';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
 import { BoardIcon } from './BoardIcon';
 
@@ -38,8 +38,28 @@ export function Sidebar() {
   const canvasDrop = useStore((s) => (s.ui.dropTarget?.kind === 'folder' ? s.ui.dropTarget.id : null));
   const [renaming, setRenaming] = useState<string | null>(null);
   const [htmlDrop, setHtmlDrop] = useState<string | null>(null);
+  const collapsedSections = useStore((s) => s.ui.collapsedSections);
 
   if (!open) return null;
+
+  const isCollapsed = (section: string) => collapsedSections.includes(section);
+  const toggleSection = (section: string) =>
+    setUI((u) => ({
+      collapsedSections: u.collapsedSections.includes(section)
+        ? u.collapsedSections.filter((x) => x !== section)
+        : [...u.collapsedSections, section],
+    }));
+  const sectionToggle = (section: string, label: string, count: number) => (
+    <button
+      className="section-toggle"
+      aria-expanded={!isCollapsed(section)}
+      onClick={() => toggleSection(section)}
+    >
+      {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+      <span>{label}</span>
+      {isCollapsed(section) && count > 0 && <span className="section-count">{count}</span>}
+    </button>
+  );
 
   const openPath = new Set(boardPath(doc, boardId).map((b) => b.id));
   const folders = Object.values(doc.folders).sort((a, b) => a.order - b.order);
@@ -93,14 +113,19 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar" aria-label="Folders and projects">
-      <button className={`project-row home ${boardId === doc.rootId ? 'current' : ''}`} onClick={() => openBoard(doc.rootId)}>
-        <span className="sidebar-icon"><Home size={15} /></span>
-        <span className="project-name">Home</span>
-      </button>
+      <div className="sidebar-top">
+        <button className={`project-row home ${boardId === doc.rootId ? 'current' : ''}`} onClick={() => openBoard(doc.rootId)}>
+          <span className="sidebar-icon"><Home size={15} /></span>
+          <span className="project-name">Home</span>
+        </button>
+        <button className="sidebar-collapse" aria-label="Collapse sidebar" title="Collapse sidebar (⌘\\)" onClick={() => setUI({ sidebarOpen: false })}>
+          <ChevronsLeft size={15} />
+        </button>
+      </div>
 
       <div className="sidebar-section">
         <div className="sidebar-heading">
-          <span>Folders</span>
+          {sectionToggle('folders', 'Folders', folders.length)}
           <button
             aria-label="New folder"
             title="New folder"
@@ -108,14 +133,15 @@ export function Sidebar() {
               const id = uid();
               const order = Math.max(0, ...folders.map((f) => f.order)) + 1;
               mutate((d) => { d.folders[id] = { id, name: 'New folder', order }; });
+              if (isCollapsed('folders')) toggleSection('folders');
               setRenaming(id);
             }}
           >
             <FolderPlus size={14} />
           </button>
         </div>
-        {folders.length === 0 && <p className="sidebar-empty">Create a folder to group your projects.</p>}
-        {folders.map((f) => {
+        {!isCollapsed('folders') && folders.length === 0 && <p className="sidebar-empty">Create a folder to group your projects.</p>}
+        {!isCollapsed('folders') && folders.map((f) => {
           const items = inFolder(f.id);
           return (
             <div key={f.id} className="folder">
@@ -176,13 +202,13 @@ export function Sidebar() {
 
       <div className="sidebar-section">
         <div className={`sidebar-heading ${isDropping('') ? 'drop-over' : ''}`} {...dropZone('')}>
-          <span>Projects</span>
+          {sectionToggle('projects', 'Projects', unfiled.length)}
           <button aria-label="New project" title="New project" onClick={() => newProject()}>
             <Plus size={14} />
           </button>
         </div>
-        {unfiled.map(projectRow)}
-        {unfiled.length === 0 && <p className="sidebar-empty">Every project is in a folder.</p>}
+        {!isCollapsed('projects') && unfiled.map(projectRow)}
+        {!isCollapsed('projects') && unfiled.length === 0 && <p className="sidebar-empty">Every project is in a folder.</p>}
       </div>
     </nav>
   );

@@ -92,7 +92,7 @@ export function setUI(patch: Partial<UI> | ((ui: UI) => Partial<UI>)) {
   const p = typeof patch === 'function' ? patch(state.ui) : patch;
   const wasEditing = state.ui.editingId;
   setState({ ui: { ...state.ui, ...p } });
-  if ('views' in p || 'boardId' in p || 'sidebarOpen' in p) saveUI();
+  if ('views' in p || 'boardId' in p || 'sidebarOpen' in p || 'collapsedSections' in p) saveUI();
   if (wasEditing && 'editingId' in p && p.editingId !== wasEditing) removeIfEmpty(wasEditing);
 }
 
@@ -140,14 +140,14 @@ let persistTimer: number | undefined;
 
 function saveUI() {
   try {
-    const { boardId, views, sidebarOpen } = state.ui;
-    localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen }));
+    const { boardId, views, sidebarOpen, collapsedSections } = state.ui;
+    localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen, collapsedSections }));
   } catch {
     // Storage can be unavailable (private mode); the board still works.
   }
 }
 
-function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen'>> | undefined {
+function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'collapsedSections'>> | undefined {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? 'null') ?? undefined;
   } catch {
@@ -186,6 +186,7 @@ export async function initStore() {
     ui: {
       boardId,
       sidebarOpen: savedUI?.sidebarOpen ?? true,
+      collapsedSections: savedUI?.collapsedSections ?? [],
       draw: null,
       selection: [],
       editingId: null,

@@ -113,6 +113,8 @@ export interface DrawMode {
 export interface UI {
   boardId: string;
   sidebarOpen: boolean;
+  /** Sidebar sections ('folders', 'projects') the user has collapsed. */
+  collapsedSections: string[];
   /** Set while freehand drawing on the board. */
   draw: DrawMode | null;
   selection: string[];
