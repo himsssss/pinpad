@@ -15,17 +15,17 @@ export const DEFAULT_WIDTH: Record<ElType, number> = {
   drawing: 0,
 };
 
-export const PEN_COLORS = ['#323b4a', '#e8603c', '#f2a93b', '#6bbf59', '#4a90d9', '#7b6cd9', '#e05c8a', '#ffffff'];
+export const PEN_COLORS = ['#0e0f0c', '#163300', '#5fb827', '#0097c7', '#008026', '#c2410c', '#b4236b', '#ffffff'];
 export const PEN_SIZES = [2, 4, 8];
 
 export const CARD_COLORS = [
-  '#ffffff', '#fff3b0', '#ffe0c7', '#ffd1d1', '#f8d8ea',
-  '#e4daf7', '#d3e5fb', '#cdeee7', '#dcf2cf', '#e6e8eb', '#2f3540',
+  '#ffffff', '#9fe870', '#e2f6d5', '#ffeb69', '#ffc091', '#ffd7ef',
+  '#a0e1e1', '#ecf9f9', '#f0f0f0', '#e8e8e3', '#163300',
 ];
 
 export const BOARD_COLORS = [
-  '#eaca8b', '#f4bca3', '#f2aebb', '#dabcea', '#b0c8f2',
-  '#a6d6e6', '#a9cbc5', '#b6dea4', '#e3ec9a', '#c3cad3', '#323b4a',
+  '#9fe870', '#ffeb69', '#ffc091', '#ffd7ef', '#a0e1e1',
+  '#e2f6d5', '#ecf9f9', '#d4ecc4', '#f3e3c8', '#d9dbd6', '#163300',
 ];
 
 /** Icon names available for board tiles (see BoardIcon). */
@@ -34,10 +34,11 @@ export const BOARD_ICONS = [
   'heart', 'star', 'globe', 'briefcase', 'pen', 'coffee', 'map', 'gift',
 ];
 
-export const LINE_COLORS = ['#323b4a', '#8d929a', '#e8603c', '#f2a93b', '#6bbf59', '#4a90d9', '#7b6cd9', '#e05c8a'];
+export const LINE_COLORS = ['#0e0f0c', '#6a6c6a', '#163300', '#5fb827', '#0097c7', '#008026', '#c2410c', '#b4236b'];
 
+/** Dark fills (forest, plus the slate from the earlier palette) take light text. */
 export function isDark(color?: string) {
-  return color === '#2f3540' || color === '#323b4a';
+  return color === '#163300' || color === '#2f3540' || color === '#323b4a';
 }
 
 /** Creates a new element (and its target board for board cards) inside `boardId`. */
@@ -270,7 +271,7 @@ export function seedDoc(): Doc {
   const rootId = uid();
   const doc: Doc = {
     rootId,
-    boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#eaca8b', icon: 'layout' } },
+    boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#9fe870', icon: 'layout' } },
     elements: {},
     folders: {},
   };
@@ -283,14 +284,14 @@ export function seedDoc(): Doc {
   };
 
   const mood = createElement('board', rootId, 80, 80, 0);
-  doc.boards[mood.board!.id] = { ...mood.board!, title: 'Moodboard', color: '#dabcea', icon: 'palette' };
+  doc.boards[mood.board!.id] = { ...mood.board!, title: 'Moodboard', color: '#ffd7ef', icon: 'palette' };
   add(mood.el);
   const plan = createElement('board', rootId, 220, 80, 0);
-  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#a9cbc5', icon: 'rocket', folderId: workFolder };
+  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#a0e1e1', icon: 'rocket', folderId: workFolder };
   add(plan.el);
 
   const welcome = add({
-    id: uid(), type: 'note', boardId: rootId, x: 80, y: 270, w: 300, z: 0, color: '#fff3b0',
+    id: uid(), type: 'note', boardId: rootId, x: 80, y: 270, w: 300, z: 0, color: '#e2f6d5',
     html: '<h2>Welcome 👋</h2><div>This is your board. Drag cards from the toolbar on the left, or double-click anywhere to add a note.</div><ul><li>Click a card to edit it</li><li>Drag cards into a column to stack them</li><li>Drop a card onto a board to move it there</li></ul>',
   });
   const todo = add({
@@ -309,7 +310,7 @@ export function seedDoc(): Doc {
   const colId = uid();
   const c1 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, html: '<div>Columns keep related cards together.</div>' });
   const c2 = add({ id: uid(), type: 'link', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, url: 'https://milanote.com', title: 'Milanote — the tool for organizing creative projects' });
-  const c3 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, color: '#d3e5fb', html: '<div>Drag a card out to pull it from the column.</div>' });
+  const c3 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, color: '#ecf9f9', html: '<div>Drag a card out to pull it from the column.</div>' });
   add({ id: colId, type: 'column', boardId: rootId, x: 840, y: 80, w: 300, z: 0, title: 'Ideas', children: [c1, c2, c3] });
 
   add({ id: uid(), type: 'comment', boardId: rootId, x: 480, y: 520, w: 240, z: 0, text: 'Comments are handy for feedback on a board.', createdAt: Date.now() });

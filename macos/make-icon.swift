@@ -17,24 +17,12 @@ func render(_ px: Int) -> Data {
   // macOS icon grid: an 824pt rounded square centered on a 1024pt canvas.
   let tile = CGRect(x: 100, y: 100, width: 824, height: 824)
   let shape = CGPath(roundedRect: tile, cornerWidth: 185, cornerHeight: 185, transform: nil)
+  // Flat lime tile (the design system avoids gradients) with a soft macOS-style drop shadow.
   ctx.saveGState()
-  ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.28).cgColor)
+  ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.22).cgColor)
   ctx.addPath(shape)
-  ctx.setFillColor(NSColor(srgbRed: 0.91, green: 0.38, blue: 0.24, alpha: 1).cgColor)
+  ctx.setFillColor(NSColor(srgbRed: 0.624, green: 0.910, blue: 0.439, alpha: 1).cgColor)
   ctx.fillPath()
-  ctx.restoreGState()
-
-  ctx.saveGState()
-  ctx.addPath(shape)
-  ctx.clip()
-  let gradient = CGGradient(
-    colorsSpace: CGColorSpaceCreateDeviceRGB(),
-    colors: [
-      NSColor(srgbRed: 0.96, green: 0.48, blue: 0.31, alpha: 1).cgColor,
-      NSColor(srgbRed: 0.87, green: 0.32, blue: 0.19, alpha: 1).cgColor,
-    ] as CFArray,
-    locations: [0, 1])!
-  ctx.drawLinearGradient(gradient, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
   ctx.restoreGState()
 
   // The "M" mark from the web favicon (a 32-unit design), flipped into CoreGraphics' y-up space.
@@ -45,7 +33,7 @@ func render(_ px: Int) -> Data {
   ctx.addLine(to: p(16, 17))
   ctx.addLine(to: p(24, 9))
   ctx.addLine(to: p(24, 23))
-  ctx.setStrokeColor(NSColor.white.cgColor)
+  ctx.setStrokeColor(NSColor(srgbRed: 0.086, green: 0.2, blue: 0, alpha: 1).cgColor)
   ctx.setLineWidth(3.2 * unit)
   ctx.setLineJoin(.round)
   ctx.setLineCap(.round)

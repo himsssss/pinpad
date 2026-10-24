@@ -14,7 +14,7 @@ export function BoardIcon({ icon, color, size = 72 }: { icon: string; color: str
   const Icon = ICONS[icon] ?? LayoutGrid;
   return (
     <div className="board-icon" style={{ width: size, height: size, background: color, borderRadius: size * 0.22 }}>
-      <Icon size={size * 0.42} strokeWidth={1.8} color={isDark(color) ? '#fff' : '#323b4a'} />
+      <Icon size={size * 0.42} strokeWidth={1.8} color={isDark(color) ? '#9fe870' : '#163300'} />
     </div>
   );
 }

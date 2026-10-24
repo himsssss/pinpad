@@ -83,7 +83,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
             <PanelLeft size={17} />
           </button>
           <button className="logo" onClick={() => openBoard(rootId)} aria-label="Home">
-            <svg viewBox="0 0 32 32" width="22" height="22"><circle cx="16" cy="16" r="16" fill="#323b4a" /><path d="M9 22V10l7 7 7-7v12" stroke="#fff" strokeWidth="2.6" fill="none" strokeLinejoin="round" strokeLinecap="round" /></svg>
+            <svg viewBox="0 0 32 32" width="22" height="22"><circle cx="16" cy="16" r="16" fill="#163300" /><path d="M9 22V10l7 7 7-7v12" stroke="#9fe870" strokeWidth="2.6" fill="none" strokeLinejoin="round" strokeLinecap="round" /></svg>
           </button>
           {path.map((b, i) => (
             <span key={b.id} className="crumb">
