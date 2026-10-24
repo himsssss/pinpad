@@ -559,16 +559,6 @@ li.done .todo-check { background: var(--positive); border-color: var(--positive)
 
 /* ---------- folders sidebar ---------- */
 
-.sidebar-toggle {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--ink-muted);
-  margin-right: 2px;
-}
-.sidebar-toggle:hover, .sidebar-toggle.active { background: rgba(14, 15, 12, 0.06); color: var(--ink); }
 
 .sidebar {
   width: 232px;
@@ -703,8 +693,8 @@ button {
 .header-row.sub { height: 48px; border-top: 1px solid var(--line); }
 .crumb button { border-radius: var(--pill); padding: 5px 10px; font-weight: 600; color: var(--ink-faint); }
 .crumb button:hover { background: var(--glass); }
-.header-actions > button, .menu-wrap > button, .sidebar-toggle, .sidebar-collapse { border-radius: var(--pill); }
-.header-actions button:hover:not(:disabled), .sidebar-toggle:hover, .sidebar-toggle.active, .sidebar-collapse:hover {
+.header-actions > button, .menu-wrap > button, .sidebar-collapse { border-radius: var(--pill); }
+.header-actions button:hover:not(:disabled), .sidebar-collapse:hover {
   background: var(--glass);
   color: var(--ink);
 }

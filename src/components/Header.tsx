@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Download, PanelLeft, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { Download, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
-import { getState, mutate, openBoard, redo, setUI, undo, useStore } from '../store';
+import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
 
@@ -49,7 +49,6 @@ export function Header({ onSearch }: { onSearch: () => void }) {
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
   const saved = useStore((s) => s.saved);
-  const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const path = boardPath(getState().doc, boardId);
@@ -74,14 +73,6 @@ export function Header({ onSearch }: { onSearch: () => void }) {
     <header className="header">
       <div className="header-row">
         <nav className="breadcrumbs">
-          <button
-            className={`sidebar-toggle ${sidebarOpen ? 'active' : ''}`}
-            onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
-            aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            title={`${sidebarOpen ? 'Hide' : 'Show'} folders (⌘\\)`}
-          >
-            <PanelLeft size={17} />
-          </button>
           <button className="logo" onClick={() => openBoard(rootId)} aria-label="Pinpad home">
             <svg viewBox="0 0 32 32" width="24" height="24"><circle cx="16" cy="16" r="16" fill="#163300" /><g transform="rotate(35 16 16)" fill="#9fe870"><path d="M12 5h8a1.5 1.5 0 0 1 0 3h-8a1.5 1.5 0 0 1 0-3z" /><path d="M13.2 8h5.6l1 6.5h-7.6z" /><path d="M9.5 14.5h13a1.75 1.75 0 0 1 0 3.5h-13a1.75 1.75 0 0 1 0-3.5z" /><path d="M16 18v9.5" stroke="#9fe870" strokeWidth="1.8" strokeLinecap="round" /></g></svg>
           </button>
