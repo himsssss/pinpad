@@ -3,7 +3,7 @@ import {
   AlignLeft, ArrowLeft, ArrowUpRight, Bold, ChevronsDownUp, Columns2, Copy, ExternalLink, Heading,
   Image, Italic, LayoutGrid, Link, List, ListChecks, ListOrdered, MessageSquare, MoveHorizontal,
   Pencil, Shapes, Spline, Strikethrough, Trash2, Table, Eraser, Rows3, Columns3, PanelTop,
-  type LucideIcon,
+  PanelLeftClose, PanelLeftOpen, type LucideIcon,
 } from 'lucide-react';
 import type { ElType, LineEl } from '../types';
 import { getState, mutate, openBoard, select, setUI, startEditing, useStore } from '../store';
@@ -71,6 +71,7 @@ export function Toolbar() {
   const boards = useStore((s) => s.doc.boards);
   const dropTarget = useStore((s) => s.ui.dropTarget);
   const draw = useStore((s) => s.ui.draw);
+  const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
   const [popover, setPopover] = useState<{ kind: 'color' | 'icon'; top: number } | null>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
@@ -116,6 +117,17 @@ export function Toolbar() {
 
   const trash = (
     <div className="toolbar-bottom">
+      <button
+        className={`tool folders-toggle ${sidebarOpen ? 'active' : ''}`}
+        onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
+        aria-pressed={sidebarOpen}
+        title={`${sidebarOpen ? 'Minimize' : 'Show'} folders (⌘\\)`}
+      >
+        <span className="tool-icon plain">
+          {sidebarOpen ? <PanelLeftClose size={17} strokeWidth={1.7} /> : <PanelLeftOpen size={17} strokeWidth={1.7} />}
+        </span>
+        <span className="tool-label">Folders</span>
+      </button>
       <button
         className={`tool trash ${dropTarget?.kind === 'trash' ? 'drop-over' : ''}`}
         data-drop-kind="trash"

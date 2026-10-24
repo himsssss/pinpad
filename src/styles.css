@@ -191,7 +191,9 @@ button {
 .tool-label { font-size: 10px; color: rgba(0, 0, 0, 0.6); line-height: 1; }
 .tool.back { height: 28px; justify-content: center; color: var(--ink-muted); margin-bottom: 4px; }
 .tool.back:hover { color: var(--ink); }
-.toolbar-bottom { display: flex; justify-content: center; }
+.toolbar-bottom { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tool.folders-toggle.active .tool-icon { color: var(--ink); box-shadow: none; }
+.tool.folders-toggle:hover .tool-icon { color: var(--ink); transform: none; box-shadow: none; }
 .tool.trash.drop-over { background: rgba(232, 96, 60, 0.12); }
 .tool.trash.drop-over .tool-icon { color: var(--accent); transform: scale(1.15); }
 body.is-dragging .tool.trash .tool-icon { color: var(--ink-muted); }
