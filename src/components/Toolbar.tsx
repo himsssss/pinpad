@@ -118,8 +118,9 @@ export function Toolbar() {
     setPopover((p) => (p?.kind === kind ? null : { kind, top }));
   };
 
-  const trash = (
-    <div className="toolbar-bottom">
+  // Folders toggle sits alone at the top of the rail, separated from the tools.
+  const foldersToggle = (
+    <div className="toolbar-top">
       <button
         className={`tool folders-toggle ${sidebarOpen ? 'active' : ''}`}
         onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
@@ -131,6 +132,11 @@ export function Toolbar() {
         </span>
         <span className="tool-label">Folders</span>
       </button>
+    </div>
+  );
+
+  const trash = (
+    <div className="toolbar-bottom">
       <button
         className={`tool trash ${dropTarget?.kind === 'trash' ? 'drop-over' : ''}`}
         data-drop-kind="trash"
@@ -186,6 +192,7 @@ export function Toolbar() {
   if (!selected.length) {
     return (
       <aside className="toolbar">
+        {foldersToggle}
         <div className="toolbar-tools">
           {CREATE_TOOLS.map((t) => (
             <Tool key={t.type} label={t.label} icon={t.icon} accent={t.accent} draggableType={t.type} onClick={() => addElementAtCenter(t.type)} />
@@ -205,6 +212,7 @@ export function Toolbar() {
 
   return (
     <aside className="toolbar contextual">
+      {foldersToggle}
       <div className="toolbar-tools">
         <button className="tool back" onClick={() => select([])} aria-label="Back to tools">
           <ArrowLeft size={15} />
