@@ -945,3 +945,27 @@ body.is-connecting, body.is-connecting * { cursor: crosshair !important; }
 /* A light halo keeps the grip visible over photos (image cards) as well as white cards. */
 .card-image > .resize-grip { filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); }
 body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
+
+/* media players inside link cards */
+.link-player { position: relative; }
+.link-media.player { background: #0e0f0c; }
+.link-media.video video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; }
+.link-media.audio { padding: 14px 12px; background: var(--surface-muted); }
+.link-media.audio audio { width: 100%; display: block; }
+.link-media.placeholder { display: grid; place-items: center; background: var(--forest); }
+.link-media.audio-placeholder { height: 120px; }
+.media-provider { position: absolute; left: 12px; top: 10px; font-size: 11.5px; font-weight: 600; color: var(--lime); }
+.media-blocker { position: absolute; inset: 0; z-index: 2; cursor: default; }
+.media-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--pill);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--glass);
+}
+.media-close:hover { background: var(--glass-hover); }

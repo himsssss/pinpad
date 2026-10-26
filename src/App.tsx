@@ -36,7 +36,9 @@ export function App() {
         return;
       }
       if (e.key === 'Escape') {
-        if (ui.draw) {
+        if (ui.playingId && ui.selection.includes(ui.playingId)) {
+          setUI({ playingId: null });
+        } else if (ui.draw) {
           const drawn = ui.draw.drawingId && doc.elements[ui.draw.drawingId];
           setUI({ draw: null });
           select(drawn ? [drawn.id] : []);

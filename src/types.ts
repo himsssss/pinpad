@@ -42,7 +42,6 @@ export interface LinkPreview {
   description?: string;
   image?: string;
   siteName?: string;
-  video?: { provider: 'youtube' | 'vimeo'; id: string };
 }
 export interface ImageEl extends BaseEl { type: 'image'; src: string; caption: string }
 export interface BoardEl extends BaseEl { type: 'board'; targetId: string }
@@ -130,6 +129,8 @@ export interface DrawMode {
 
 export interface UI {
   boardId: string;
+  /** Link card whose media player is open; only one plays at a time. */
+  playingId: string | null;
   sidebarOpen: boolean;
   /** Sidebar sections ('folders', 'projects') the user has collapsed. */
   collapsedSections: string[];

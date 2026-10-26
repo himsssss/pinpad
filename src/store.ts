@@ -128,7 +128,7 @@ export function startEditing(id: string, point: { x: number; y: number } | null 
 }
 
 export function openBoard(boardId: string) {
-  setUI({ boardId, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null });
+  setUI({ boardId, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null, playingId: null });
 }
 
 // ---- persistence ----
@@ -186,6 +186,7 @@ export async function initStore() {
     doc,
     ui: {
       boardId,
+      playingId: null,
       sidebarOpen: savedUI?.sidebarOpen ?? true,
       collapsedSections: savedUI?.collapsedSections ?? [],
       draw: null,

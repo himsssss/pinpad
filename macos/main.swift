@@ -2,6 +2,7 @@
 // loads the built web app from the bundle's Resources/web folder.
 
 import Cocoa
+import Network
 import UniformTypeIdentifiers
 import WebKit
 
@@ -69,6 +70,64 @@ final class ConsoleLogger: NSObject, WKScriptMessageHandler {
   }
 }
 
+/// Serves a one-line wrapper page on 127.0.0.1 that frames a media player. YouTube and other
+/// players refuse to play inside the app's custom-scheme page (it sends no referrer), but play
+/// fine inside an http://127.0.0.1 page. Only players from known media hosts are framed.
+final class EmbedServer: @unchecked Sendable {
+  /// Mirrors EMBED_HOSTS in src/media.ts.
+  private static let allowedHosts: Set<String> = [
+    "www.youtube-nocookie.com", "player.vimeo.com", "www.loom.com", "www.dailymotion.com", "fast.wistia.net",
+    "streamable.com", "player.twitch.tv", "clips.twitch.tv", "www.facebook.com", "play.vidyard.com",
+    "w.soundcloud.com", "open.spotify.com", "player-widget.mixcloud.com",
+  ]
+  private var listener: NWListener?
+  private var reported = false
+
+  /// Starts listening on a free loopback port and reports it once (nil if it couldn't start).
+  func start(onReady: @escaping @Sendable (UInt16?) -> Void) {
+    let params = NWParameters.tcp
+    params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+    guard let listener = try? NWListener(using: params) else { return onReady(nil) }
+    self.listener = listener
+    listener.newConnectionHandler = { Self.respond(on: $0) }
+    listener.stateUpdateHandler = { [weak self] state in
+      guard let self, !self.reported else { return }
+      switch state {
+      case .ready: self.reported = true; onReady(listener.port?.rawValue)
+      case .failed, .cancelled: self.reported = true; onReady(nil)
+      default: break
+      }
+    }
+    listener.start(queue: .global(qos: .userInitiated))
+  }
+
+  private static func respond(on connection: NWConnection) {
+    connection.start(queue: .global(qos: .userInitiated))
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { data, _, _, _ in
+      let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+      let target = request.split(separator: " ", maxSplits: 2).dropFirst().first.map(String.init) ?? ""
+      let (status, body) = page(for: target)
+      let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+      connection.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in connection.cancel() })
+    }
+  }
+
+  private static func page(for target: String) -> (String, String) {
+    guard let components = URLComponents(string: "http://127.0.0.1" + target), components.path == "/embed",
+      let src = components.queryItems?.first(where: { $0.name == "src" })?.value,
+      let url = URL(string: src), url.scheme == "https", let host = url.host?.lowercased(), allowedHosts.contains(host)
+    else { return ("404 Not Found", "Not found") }
+    let attr = src.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+      .replacingOccurrences(of: "<", with: "&lt;")
+    let html = """
+      <!doctype html><meta charset="utf-8"><meta name="referrer" content="strict-origin-when-cross-origin">\
+      <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{border:0;width:100%;height:100%}</style>\
+      <iframe src="\(attr)" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write" allowfullscreen></iframe>
+      """
+    return ("200 OK", html)
+  }
+}
+
 /// Fetches a web page's HTML for link previews, which the page can't read across origins.
 /// Exposed to the page as `window.pinpadNative.fetchPage(url)`.
 final class PageFetcher: NSObject, WKScriptMessageHandlerWithReply {
@@ -110,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var window: NSWindow!
   private var webView: WKWebView!
   private var titleObservation: NSKeyValueObservation?
+  private let embedServer = EmbedServer()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.mainMenu = makeMainMenu()
@@ -150,7 +210,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       }
     }
 
-    webView.load(URLRequest(url: startURL))
+    // Load once the media wrapper server reports its port (the page reads it at startup).
+    let controller = config.userContentController
+    embedServer.start { port in
+      DispatchQueue.main.async {
+        if let port {
+          controller.addUserScript(WKUserScript(
+            source: "window.pinpadNative && (window.pinpadNative.embedBase = 'http://127.0.0.1:\(port)');",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        self.webView.load(URLRequest(url: startURL))
+      }
+    }
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }

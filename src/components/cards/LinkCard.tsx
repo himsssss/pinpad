@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, Play } from 'lucide-react';
+import { ExternalLink, Music, Play, X } from 'lucide-react';
 import type { LinkEl } from '../../types';
-import { getState, mutate } from '../../store';
+import { getState, mutate, setUI, useStore } from '../../store';
 import { hostname, normalizeUrl } from '../../doc';
-import { embedUrl, fetchPreview } from '../../linkPreview';
+import { fetchPreview } from '../../linkPreview';
+import { iframeSrc, mediaEmbed, type MediaEmbed } from '../../media';
 import { Editable } from '../Editable';
 
 /** Links whose preview is being fetched, so remounts don't fetch twice. */
@@ -29,12 +30,46 @@ function usePreview(el: LinkEl) {
   }, [el.id, el.url, el.previewFor]);
 }
 
-/** Inline playback needs a normal web origin; the desktop apps open videos in the browser. */
-const canEmbed = location.protocol === 'http:' || location.protocol === 'https:';
+/** The open player. Unless the card is the only one selected, a blocker covers it so the card can still be dragged. */
+function Player({ media, title, interactive }: { media: MediaEmbed; title: string; interactive: boolean }) {
+  const blocker = !interactive && <div className="media-blocker" title="Select the card to use the player" />;
+  if (media.kind === 'video') {
+    return (
+      <div className="link-media video">
+        <video src={media.src} controls autoPlay playsInline />
+        {blocker}
+      </div>
+    );
+  }
+  if (media.kind === 'audio') {
+    return (
+      <div className="link-media audio">
+        <audio src={media.src} controls autoPlay />
+        {blocker}
+      </div>
+    );
+  }
+  const src = iframeSrc(media.src);
+  return (
+    <div className="link-media player" style={media.aspect ? { aspectRatio: String(media.aspect) } : { height: media.height }}>
+      {src && (
+        <iframe
+          src={src}
+          title={title || media.provider}
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      )}
+      {blocker}
+    </div>
+  );
+}
 
 export function LinkCard({ el, editing }: { el: LinkEl; editing: boolean }) {
   usePreview(el);
-  const [playing, setPlaying] = useState(false);
+  const playing = useStore((s) => s.ui.playingId === el.id);
+  const soleSelected = useStore((s) => s.ui.selection.length === 1 && s.ui.selection[0] === el.id);
   const [imageFailed, setImageFailed] = useState(false);
 
   if (!el.url) {
@@ -62,45 +97,59 @@ export function LinkCard({ el, editing }: { el: LinkEl; editing: boolean }) {
 
   const host = hostname(el.url);
   const preview = el.previewFor === el.url ? el.preview : undefined;
-  const video = preview?.video;
+  const media = mediaEmbed(el.url);
   const image = !imageFailed ? preview?.image : undefined;
   const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`;
+  const audioOnly = media?.kind === 'audio' || (media?.kind === 'iframe' && !media.aspect);
+
+  const play = () => {
+    // A player that can't be embedded here (e.g. no wrapper) opens in the browser instead.
+    if (media?.kind === 'iframe' && !iframeSrc(media.src)) window.open(el.url, '_blank', 'noopener');
+    else setUI({ playingId: el.id, selection: [el.id] });
+  };
+
+  let top: React.ReactNode;
+  if (playing && media) {
+    top = (
+      <div className="link-player">
+        <Player media={media} title={el.title} interactive={soleSelected} />
+      </div>
+    );
+  } else if (image) {
+    top = (
+      <div className={`link-media ${media && !audioOnly ? 'video' : ''}`}>
+        <img src={image} alt="" draggable={false} onError={() => setImageFailed(true)} />
+        {media && <PlayButton audio={audioOnly} onPlay={play} />}
+      </div>
+    );
+  } else if (media) {
+    top = (
+      <div className={`link-media placeholder ${audioOnly ? 'audio-placeholder' : 'video'}`}>
+        <span className="media-provider">{media.provider}</span>
+        <PlayButton audio={audioOnly} onPlay={play} />
+      </div>
+    );
+  } else {
+    top = (
+      <div className="link-preview">
+        <img src={favicon} alt="" draggable={false} />
+      </div>
+    );
+  }
 
   return (
     <div className="card-body link">
-      {playing && video ? (
-        <div className="link-media video">
-          <iframe
-            src={embedUrl(video)}
-            title={el.title || 'Video'}
-            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-            allowFullScreen
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
-        </div>
-      ) : image ? (
-        <div className={`link-media ${video ? 'video' : ''}`}>
-          <img src={image} alt="" draggable={false} onError={() => setImageFailed(true)} />
-          {video && (
-            <button
-              className="link-play"
-              data-nodrag
-              aria-label="Play video"
-              onClick={() => (canEmbed ? setPlaying(true) : window.open(el.url, '_blank', 'noopener'))}
-            >
-              <Play size={22} fill="currentColor" strokeWidth={0} />
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="link-preview">
-          <img src={favicon} alt="" draggable={false} />
-        </div>
-      )}
+      {top}
       <div className="link-meta">
         <div className="link-host">
           <img className="link-favicon" src={favicon} alt="" draggable={false} />
           <span className="link-url" title={el.url}>{el.url.replace(/^https?:\/\/(www\.)?/, '')}</span>
+          {/* Outside the player, so an embedded video can never swallow the click. */}
+          {playing && (
+            <button className="media-close" data-nodrag aria-label="Close player" title="Back to preview (Esc)" onClick={() => setUI({ playingId: null })}>
+              <X size={12} strokeWidth={2.5} /> Close
+            </button>
+          )}
           <a href={el.url} target="_blank" rel="noreferrer noopener" data-nodrag aria-label="Open link">
             <ExternalLink size={13} />
           </a>
@@ -113,8 +162,16 @@ export function LinkCard({ el, editing }: { el: LinkEl; editing: boolean }) {
           onEnter={() => {}}
           onChange={(title) => mutate((d) => { (d.elements[el.id] as LinkEl).title = title; }, 'pending')}
         />
-        {preview?.description && <p className="link-desc">{preview.description}</p>}
+        {preview?.description && !playing && <p className="link-desc">{preview.description}</p>}
       </div>
     </div>
+  );
+}
+
+function PlayButton({ audio, onPlay }: { audio: boolean; onPlay: () => void }) {
+  return (
+    <button className="link-play" data-nodrag aria-label={audio ? 'Play audio' : 'Play video'} onClick={onPlay}>
+      {audio ? <Music size={20} /> : <Play size={22} fill="currentColor" strokeWidth={0} />}
+    </button>
   );
 }

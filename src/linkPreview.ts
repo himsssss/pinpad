@@ -14,7 +14,8 @@ interface PageResponse {
 
 declare global {
   interface Window {
-    pinpadNative?: { fetchPage(url: string): Promise<PageResponse | null> };
+    /** Provided by the desktop apps (macos/main.swift, desktop/preload.cjs). */
+    pinpadNative?: { fetchPage(url: string): Promise<PageResponse | null>; embedBase?: string };
   }
 }
 
@@ -96,7 +97,6 @@ export async function fetchPreview(url: string): Promise<LinkPreview | null> {
       title: o?.title,
       siteName: o?.author_name ? `YouTube · ${o.author_name}` : 'YouTube',
       image: `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`,
-      video: { provider: 'youtube', id: yt },
     };
   }
   const vm = vimeoId(url);
@@ -104,15 +104,19 @@ export async function fetchPreview(url: string): Promise<LinkPreview | null> {
     const o = await json<{ title?: string; author_name?: string; thumbnail_url?: string }>(
       `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`,
     );
-    if (o) return { title: o.title, siteName: 'Vimeo', image: o.thumbnail_url, video: { provider: 'vimeo', id: vm } };
+    if (o) return { title: o.title, siteName: 'Vimeo', image: o.thumbnail_url };
   }
+  // Audio services whose oEmbed APIs allow cross-origin requests (their pages hide metadata from bots).
+  const audioOembed = /^https?:\/\/open\.spotify\.com\//.test(url) ? ['Spotify', 'https://open.spotify.com/oembed?url=']
+    : /^https?:\/\/(www\.|m\.)?soundcloud\.com\//.test(url) ? ['SoundCloud', 'https://soundcloud.com/oembed?format=json&url=']
+    : null;
+  if (audioOembed) {
+    const o = await json<{ title?: string; thumbnail_url?: string; author_name?: string }>(audioOembed[1] + encodeURIComponent(url));
+    if (o) return { title: o.title, image: o.thumbnail_url, siteName: o.author_name ? `${audioOembed[0]} · ${o.author_name}` : audioOembed[0] };
+  }
+  // Direct media files have no page to read; their file name is the best title.
+  const file = url.match(/\/([^/?#]+\.(?:mp4|m4v|webm|ogv|mov|mp3|m4a|aac|wav|oga|ogg|flac|opus))(?:[?#]|$)/i);
+  if (file) return { title: decodeURIComponent(file[1]) };
   const page = await fetchPage(url);
   return page ? parseMeta(page) : null;
-}
-
-/** Embeddable player URL for a video preview. */
-export function embedUrl(video: NonNullable<LinkPreview['video']>) {
-  return video.provider === 'youtube'
-    ? `https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&rel=0`
-    : `https://player.vimeo.com/video/${video.id}?autoplay=1`;
 }

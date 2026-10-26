@@ -2,6 +2,7 @@
 // app from inside the package over a custom scheme, so IndexedDB and localStorage persist.
 
 const { app, BrowserWindow, Menu, ipcMain, net, protocol, shell } = require('electron');
+const http = require('node:http');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -43,6 +44,48 @@ async function fetchPage(_event, url) {
   } catch {
     return null;
   }
+}
+
+/** Mirrors EMBED_HOSTS in src/media.ts. */
+const EMBED_HOSTS = new Set([
+  'www.youtube-nocookie.com', 'player.vimeo.com', 'www.loom.com', 'www.dailymotion.com', 'fast.wistia.net',
+  'streamable.com', 'player.twitch.tv', 'clips.twitch.tv', 'www.facebook.com', 'play.vidyard.com',
+  'w.soundcloud.com', 'open.spotify.com', 'player-widget.mixcloud.com',
+]);
+let embedBase = null;
+
+const escapeAttr = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/**
+ * Serves a one-line wrapper page on 127.0.0.1 that frames a media player. YouTube and other
+ * players refuse to play inside the app's custom-scheme page (it sends no referrer), but play
+ * inside an http://127.0.0.1 page. Only players from known media hosts are framed.
+ */
+function startEmbedServer() {
+  const server = http.createServer((req, res) => {
+    let src = null;
+    try {
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const candidate = url.pathname === '/embed' ? url.searchParams.get('src') : null;
+      const target = candidate && new URL(candidate);
+      if (target && target.protocol === 'https:' && EMBED_HOSTS.has(target.hostname)) src = candidate;
+    } catch {
+      src = null;
+    }
+    if (!src) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(
+      '<!doctype html><meta charset="utf-8"><meta name="referrer" content="strict-origin-when-cross-origin">' +
+        '<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{border:0;width:100%;height:100%}</style>' +
+        `<iframe src="${escapeAttr(src)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write" allowfullscreen></iframe>`,
+    );
+  });
+  return new Promise((resolve) => {
+    server.once('error', () => resolve(null));
+    server.listen(0, '127.0.0.1', () => resolve(`http://127.0.0.1:${server.address().port}`));
+  });
 }
 
 const isAppUrl = (url) => url.startsWith(`${SCHEME}://`);
@@ -117,9 +160,13 @@ function buildMenu() {
   ]);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   protocol.handle(SCHEME, serveBundle);
   ipcMain.handle('pinpad:fetch-page', fetchPage);
+  embedBase = await startEmbedServer();
+  ipcMain.on('pinpad:embed-base', (event) => {
+    event.returnValue = embedBase;
+  });
   Menu.setApplicationMenu(buildMenu());
   createWindow();
 });
