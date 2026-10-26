@@ -1,5 +1,6 @@
 import { checkpoint, currentView, getState, mutate, select, setUI } from './store';
-import { deleteElements, maxZ, moveElementsToBoard } from './doc';
+import { createElement, deleteElements, maxZ, moveElementsToBoard } from './doc';
+import type { LineEl } from './types';
 import type { DropTarget } from './types';
 
 let canvasEl: HTMLElement | null = null;
@@ -42,6 +43,68 @@ export function worldRect(id: string) {
 }
 
 const DRAG_THRESHOLD = 4;
+
+/** The card (not a line) under a screen point, skipping the given ids. */
+export function cardUnder(x: number, y: number, exclude: (string | undefined)[] = []) {
+  for (const node of document.elementsFromPoint(x, y)) {
+    const card = node.closest<HTMLElement>('[data-el-id]');
+    const id = card?.dataset.elId;
+    if (id && !exclude.includes(id) && getState().doc.elements[id]?.type !== 'line') return id;
+  }
+  return undefined;
+}
+
+/**
+ * Drag from a card's connector handle to draw an arrow: dropped on another card it attaches
+ * to both, on empty canvas it points there, and a plain click adds nothing.
+ */
+export function beginConnect(e: React.PointerEvent, fromId: string) {
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const p = screenToWorld(startX, startY);
+  const { el } = createElement('line', getState().ui.boardId, 0, 0, maxZ(getState().doc) + 1);
+  const line = el as LineEl;
+  line.start = { elId: fromId, x: p.x, y: p.y };
+  line.end = { x: p.x, y: p.y };
+  checkpoint();
+  mutate((d) => { d.elements[line.id] = line; }, 'pending');
+  document.body.classList.add('is-connecting');
+
+  let target: string | undefined;
+  const highlight = (id: string | undefined) => {
+    if (id === target) return;
+    if (target) domFor(target)?.classList.remove('connect-target');
+    target = id;
+    if (target) domFor(target)?.classList.add('connect-target');
+  };
+
+  const move = (ev: PointerEvent) => {
+    const w = screenToWorld(ev.clientX, ev.clientY);
+    highlight(cardUnder(ev.clientX, ev.clientY, [fromId, line.id]));
+    mutate((d) => {
+      const l = d.elements[line.id] as LineEl;
+      l.end = { x: w.x, y: w.y };
+    }, 'pending');
+  };
+  const up = (ev: PointerEvent) => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    document.body.classList.remove('is-connecting');
+    const attachTo = target;
+    highlight(undefined);
+    if (!attachTo && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD * 2) {
+      mutate((d) => { delete d.elements[line.id]; }, 'none');
+      return;
+    }
+    if (attachTo) mutate((d) => { (d.elements[line.id] as LineEl).end.elId = attachTo; }, 'pending');
+    select([line.id]);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
 
 /**
  * Handles a pointer-down on a card: a short press is a click (passed to onClick), a move

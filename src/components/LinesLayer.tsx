@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { LineEl } from '../types';
 import { checkpoint, getState, mutate, useStore } from '../store';
-import { beginCardPointer, screenToWorld, worldRect } from '../interactions';
+import { beginCardPointer, cardUnder, screenToWorld, worldRect } from '../interactions';
 
 type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
@@ -39,16 +39,6 @@ function geometry(line: LineEl) {
 
 type Refs = { path?: SVGPathElement | null; hit?: SVGPathElement | null; hs?: SVGCircleElement | null; he?: SVGCircleElement | null; hm?: SVGCircleElement | null };
 
-/** Card under a screen point that a line endpoint can attach to. */
-function attachTarget(x: number, y: number, lineId: string, otherEnd?: string) {
-  for (const node of document.elementsFromPoint(x, y)) {
-    const card = node.closest<HTMLElement>('[data-el-id]');
-    const id = card?.dataset.elId;
-    if (id && id !== lineId && id !== otherEnd) return id;
-  }
-  return undefined;
-}
-
 function dragEndpoint(e: React.PointerEvent, line: LineEl, which: 'start' | 'end') {
   e.stopPropagation();
   e.preventDefault();
@@ -63,7 +53,7 @@ function dragEndpoint(e: React.PointerEvent, line: LineEl, which: 'start' | 'end
   const up = (ev: PointerEvent) => {
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
-    const target = attachTarget(ev.clientX, ev.clientY, line.id, other);
+    const target = cardUnder(ev.clientX, ev.clientY, [line.id, other]);
     if (target) mutate((d) => { (d.elements[line.id] as LineEl)[which].elId = target; }, 'pending');
   };
   window.addEventListener('pointermove', move);
