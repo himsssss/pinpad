@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { getState, openBoard, startEditing, useStore } from '../store';
-import { beginCardPointer, beginConnect, beginResize } from '../interactions';
+import { beginCardPointer, beginResize } from '../interactions';
 import { isDark } from '../doc';
 import { focusAtPoint } from './Editable';
+import { ConnectHandle } from './ConnectHandle';
 import { NoteCard } from './cards/NoteCard';
 import { TodoCard } from './cards/TodoCard';
 import { LinkCard } from './cards/LinkCard';
@@ -89,16 +90,7 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       {el.type === 'comment' && <CommentCard el={el} editing={editing} />}
       {el.type === 'table' && <TableCard el={el} editing={editing} />}
       {el.type === 'drawing' && <DrawingCard el={el} />}
-      {!editing && (
-        <div className="connect-zone" data-nodrag>
-          <button
-            className="connect-handle"
-            aria-label="Drag to connect to another card"
-            title="Drag to connect"
-            onPointerDown={(e) => beginConnect(e, id)}
-          />
-        </div>
-      )}
+      {!editing && el.type !== 'board' && <ConnectHandle id={id} />}
       {resizable && (
         <div className="resize-handle" onPointerDown={(e) => beginResize(e, id, el.type === 'image' || el.type === 'drawing' ? 40 : 160)} />
       )}

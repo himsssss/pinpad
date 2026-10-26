@@ -3,6 +3,7 @@ import { mutate, useStore } from '../../store';
 import { countCards } from '../../doc';
 import { BoardIcon } from '../BoardIcon';
 import { Editable } from '../Editable';
+import { ConnectHandle } from '../ConnectHandle';
 
 export function BoardCard({ el, editing, selected }: { el: BoardEl; editing: boolean; selected: boolean }) {
   const board = useStore((s) => s.doc.boards[el.targetId]);
@@ -12,6 +13,7 @@ export function BoardCard({ el, editing, selected }: { el: BoardEl; editing: boo
     <div className="card-body board-card">
       <div className={`board-icon-wrap ${selected ? 'selected' : ''}`}>
         <BoardIcon icon={board.icon} color={board.color} />
+        {!editing && <ConnectHandle id={el.id} />}
       </div>
       <Editable
         className="board-title"

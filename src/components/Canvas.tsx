@@ -218,7 +218,10 @@ export function Canvas() {
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
-      <div className="world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
+      <div
+        className="world"
+        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`, ['--inv-zoom' as string]: 1 / view.zoom }}
+      >
         <LinesLayer boardId={boardId} layer="under" />
         {cards.map((id) => (
           <CardFrame key={id} id={id} />

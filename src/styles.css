@@ -832,45 +832,52 @@ body.is-dragging .card.selected.free:not(.card-board) { box-shadow: 0 0 0 2px va
 .folder-row.drop-over, .sidebar-heading.drop-over { background: var(--lime-tint); box-shadow: inset 0 0 0 1.5px var(--forest); }
 .section-count { background: var(--glass); border-radius: var(--pill); }
 
-/* connector handle: drag from a card's right edge to draw an arrow to another card */
-.connect-zone {
+/* quick-line tool: drag from a card's top-right corner to draw an arrow to another card.
+   It keeps the same on-screen size at any zoom via --inv-zoom (set on .world). */
+.quick-line {
   position: absolute;
-  top: 50%;
-  right: -34px;
-  width: 34px;
-  height: 36px;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  top: -9px;
+  right: -9px;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  cursor: crosshair;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
-  z-index: 3;
+  z-index: 4;
+  transform: scale(var(--inv-zoom, 1));
+  transition: opacity 0.1s ease-out;
 }
-.card:hover > .connect-zone, .card.selected > .connect-zone { opacity: 1; pointer-events: auto; }
-.card.in-column > .connect-zone { right: -26px; width: 26px; }
-body.is-dragging .connect-zone, body.is-connecting .connect-zone { opacity: 0; pointer-events: none; }
-.connect-handle {
+.card:hover > .quick-line,
+.card.selected > .quick-line,
+.card-board:hover .board-icon-wrap > .quick-line,
+.card-board.selected .board-icon-wrap > .quick-line { opacity: 1; pointer-events: auto; }
+.board-icon-wrap { position: relative; }
+.board-icon-wrap > .quick-line { top: -6px; right: -6px; }
+body.is-dragging .quick-line, body.is-connecting .quick-line { opacity: 0; pointer-events: none; }
+.quick-line-dot {
   width: 16px;
   height: 16px;
-  border-radius: var(--pill);
-  background: var(--bg);
-  box-shadow: inset 0 0 0 2px var(--forest);
-  cursor: crosshair;
-  position: relative;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(14, 15, 12, 0.18), 0 0 0 1px rgba(14, 15, 12, 0.06);
+  transform: scale(0.5);
+  transition: transform 0.1s ease-out;
 }
-.connect-handle::after {
-  content: '';
+.quick-line-arrow {
   position: absolute;
-  inset: 4px;
-  border-radius: var(--pill);
-  background: var(--forest);
-  transform: scale(0.6);
-  transition: transform 0.15s ease;
+  left: 50%;
+  top: 50%;
+  margin: -5px 0 0 -5px;
+  color: var(--ink);
+  opacity: 0;
+  transform: translate(-7px, 7px);
+  transition: opacity 0.05s linear, transform 0.1s ease-out;
+  pointer-events: none;
 }
-.connect-handle:hover { background: var(--lime); }
-.connect-handle:hover::after { transform: scale(1); }
+.quick-line:hover .quick-line-dot { transform: scale(1); }
+.quick-line:hover .quick-line-arrow { opacity: 1; transform: none; }
 body.is-connecting, body.is-connecting * { cursor: crosshair !important; }
 .card.connect-target:not(.card-board) { box-shadow: 0 0 0 2px var(--forest), 0 0 0 6px var(--lime-tint); }
 .card-board.connect-target .board-icon-wrap { box-shadow: 0 0 0 3px var(--lime), 0 0 0 5px var(--forest); }
