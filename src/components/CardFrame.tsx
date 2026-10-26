@@ -59,6 +59,7 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
     : {};
 
   const resizable = !inColumn && el.type !== 'board';
+  const minWidth = el.type === 'image' || el.type === 'drawing' ? 40 : 160;
 
   return (
     <div
@@ -92,7 +93,14 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       {el.type === 'drawing' && <DrawingCard el={el} />}
       {!editing && el.type !== 'board' && <ConnectHandle id={id} />}
       {resizable && (
-        <div className="resize-handle" onPointerDown={(e) => beginResize(e, id, el.type === 'image' || el.type === 'drawing' ? 40 : 160)} />
+        <>
+          <div className="resize-handle" onPointerDown={(e) => beginResize(e, id, minWidth)} />
+          <div className="resize-grip" data-nodrag title="Drag to resize" onPointerDown={(e) => beginResize(e, id, minWidth)}>
+            <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+              <path d="M11 4 4 11M11 8 8 11" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </div>
+        </>
       )}
     </div>
   );

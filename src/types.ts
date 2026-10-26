@@ -27,7 +27,23 @@ interface BaseEl {
 
 export interface NoteEl extends BaseEl { type: 'note'; html: string }
 export interface TodoEl extends BaseEl { type: 'todo'; title: string; items: TodoItem[] }
-export interface LinkEl extends BaseEl { type: 'link'; url: string; title: string }
+export interface LinkEl extends BaseEl {
+  type: 'link';
+  url: string;
+  title: string;
+  /** Rich preview (image, description, video), fetched once per URL. */
+  preview?: LinkPreview;
+  /** The URL the preview was fetched for; a different url means it's stale. */
+  previewFor?: string;
+}
+
+export interface LinkPreview {
+  title?: string;
+  description?: string;
+  image?: string;
+  siteName?: string;
+  video?: { provider: 'youtube' | 'vimeo'; id: string };
+}
 export interface ImageEl extends BaseEl { type: 'image'; src: string; caption: string }
 export interface BoardEl extends BaseEl { type: 'board'; targetId: string }
 export interface ColumnEl extends BaseEl { type: 'column'; title: string; children: string[]; collapsed?: boolean }

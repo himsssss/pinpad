@@ -69,6 +69,42 @@ final class ConsoleLogger: NSObject, WKScriptMessageHandler {
   }
 }
 
+/// Fetches a web page's HTML for link previews, which the page can't read across origins.
+/// Exposed to the page as `window.pinpadNative.fetchPage(url)`.
+final class PageFetcher: NSObject, WKScriptMessageHandlerWithReply {
+  static let script = """
+    window.pinpadNative = { fetchPage: (url) => window.webkit.messageHandlers.fetchPage.postMessage(String(url)) };
+    """
+  private static let maxBytes = 1_500_000
+  private static let userAgent =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 PinpadLinkPreview"
+
+  func userContentController(
+    _ controller: WKUserContentController,
+    didReceive message: WKScriptMessage,
+    replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
+  ) {
+    guard let string = message.body as? String, let url = URL(string: string),
+      url.scheme == "https" || url.scheme == "http"
+    else {
+      replyHandler(nil, nil)
+      return
+    }
+    var request = URLRequest(url: url, timeoutInterval: 8)
+    request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+    request.setValue("text/html", forHTTPHeaderField: "Accept")
+    URLSession.shared.dataTask(with: request) { data, response, _ in
+      var result: [String: String]?
+      if let data, let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+        let slice = data.prefix(Self.maxBytes)
+        let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
+        result = ["url": http.url?.absoluteString ?? string, "html": html]
+      }
+      DispatchQueue.main.async { replyHandler(result, nil) }
+    }.resume()
+  }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   private var window: NSWindow!
@@ -83,6 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let webRoot = Bundle.main.resourceURL!.appendingPathComponent("web")
     config.setURLSchemeHandler(BundleSchemeHandler(root: webRoot), forURLScheme: appScheme)
     config.userContentController.add(ConsoleLogger(), name: "console")
+    config.userContentController.addScriptMessageHandler(PageFetcher(), contentWorld: .page, name: "fetchPage")
+    config.userContentController.addUserScript(
+      WKUserScript(source: PageFetcher.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.userContentController.addUserScript(
       WKUserScript(source: ConsoleLogger.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 

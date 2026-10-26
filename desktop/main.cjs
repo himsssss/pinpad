@@ -1,7 +1,7 @@
 // Electron shell for Pinpad (used for the Windows build): one window that loads the built web
 // app from inside the package over a custom scheme, so IndexedDB and localStorage persist.
 
-const { app, BrowserWindow, Menu, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, net, protocol, shell } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -24,6 +24,27 @@ function serveBundle(request) {
   return net.fetch(pathToFileURL(file).toString());
 }
 
+const PREVIEW_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 PinpadLinkPreview';
+const MAX_PAGE_BYTES = 1_500_000;
+
+/** Fetches a web page's HTML for a link preview (the page itself can't, across origins). */
+async function fetchPage(_event, url) {
+  if (!/^https?:\/\//i.test(url)) return null;
+  try {
+    const res = await net.fetch(url, {
+      headers: { 'User-Agent': PREVIEW_UA, Accept: 'text/html' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const html = (await res.text()).slice(0, MAX_PAGE_BYTES);
+    // Electron can report an empty final URL; relative preview images resolve against it.
+    return { url: res.url || url, html };
+  } catch {
+    return null;
+  }
+}
+
 const isAppUrl = (url) => url.startsWith(`${SCHEME}://`);
 const isWebUrl = (url) => /^https?:\/\//i.test(url);
 
@@ -36,7 +57,12 @@ function createWindow() {
     title: 'Pinpad',
     backgroundColor: '#f0f0f0',
     icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: { contextIsolation: true, sandbox: true, spellcheck: true },
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      spellcheck: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
   });
 
   // Links to the web open in the default browser rather than inside the app.
@@ -93,6 +119,7 @@ function buildMenu() {
 
 app.whenReady().then(() => {
   protocol.handle(SCHEME, serveBundle);
+  ipcMain.handle('pinpad:fetch-page', fetchPage);
   Menu.setApplicationMenu(buildMenu());
   createWindow();
 });

@@ -42,6 +42,7 @@
     },
     "files": [
       "desktop/main.cjs",
+      "desktop/preload.cjs",
       "desktop/assets/icon.png",
       "dist/**"
     ],

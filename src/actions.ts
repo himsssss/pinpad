@@ -25,7 +25,7 @@ export function addElement(type: ElType, x: number, y: number, content?: string)
 }
 
 const ESTIMATED_HEIGHT: Record<ElType, number> = {
-  note: 80, todo: 120, link: 170, image: 200, board: 125, column: 160, comment: 90, line: 60, table: 130, drawing: 0,
+  note: 80, todo: 120, link: 280, image: 200, board: 125, column: 160, comment: 90, line: 60, table: 130, drawing: 0,
 };
 
 /** Nearest spot to `(x, y)` where a new card of this type won't overlap the visible cards. */
