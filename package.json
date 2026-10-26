@@ -2,7 +2,11 @@
   "name": "pinpad",
   "private": true,
   "version": "0.1.0",
+  "description": "Pinpad: boards for notes, images, links and to-dos.",
+  "author": "Himanshu Singh",
+  "license": "MIT",
   "type": "module",
+  "main": "desktop/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -29,9 +33,6 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   },
-  "description": "Pinpad: boards for notes, images, links and to-dos.",
-  "author": "Himanshu Singh",
-  "main": "desktop/main.cjs",
   "build": {
     "appId": "com.pinpad.app",
     "productName": "Pinpad",
