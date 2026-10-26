@@ -139,6 +139,7 @@ export function Toolbar() {
     <div className="toolbar-bottom">
       <button
         className={`tool trash ${dropTarget?.kind === 'trash' ? 'drop-over' : ''}`}
+        title="Trash: drop cards here, or click to delete the selection"
         data-drop-kind="trash"
         onClick={() => selection.length && deleteSelection()}
       >
