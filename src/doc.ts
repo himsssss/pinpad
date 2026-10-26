@@ -15,17 +15,19 @@ export const DEFAULT_WIDTH: Record<ElType, number> = {
   drawing: 0,
 };
 
-export const PEN_COLORS = ['#0e0f0c', '#163300', '#5fb827', '#0097c7', '#008026', '#c2410c', '#b4236b', '#ffffff'];
+export const PEN_COLORS = ['#050038', '#4262ff', '#f24726', '#fac710', '#8fd14f', '#12cdd4', '#9510ac', '#ffffff'];
 export const PEN_SIZES = [2, 4, 8];
 
+// Miro's sticky-note palette; dark navy last.
 export const CARD_COLORS = [
-  '#ffffff', '#9fe870', '#e2f6d5', '#ffeb69', '#ffc091', '#ffd7ef',
-  '#a0e1e1', '#ecf9f9', '#f0f0f0', '#e8e8e3', '#163300',
+  '#ffffff', '#fff9b1', '#f5d128', '#ff9d48', '#d5f692', '#c9df56',
+  '#93d275', '#67c6c0', '#a6ccf5', '#6cd8fa', '#9ea9ff', '#c6a2d2',
+  '#ffcee0', '#ea94bb', '#f0939d', '#e6e6e6', '#f2f2f7', '#050038',
 ];
 
 export const BOARD_COLORS = [
-  '#9fe870', '#ffeb69', '#ffc091', '#ffd7ef', '#a0e1e1',
-  '#e2f6d5', '#ecf9f9', '#d4ecc4', '#f3e3c8', '#d9dbd6', '#163300',
+  '#fff9b1', '#ffcee0', '#d5f692', '#a6ccf5', '#c6a2d2',
+  '#67c6c0', '#ff9d48', '#f0939d', '#9ea9ff', '#e6e6e6', '#050038',
 ];
 
 /** Icon names available for board tiles (see BoardIcon). */
@@ -34,11 +36,11 @@ export const BOARD_ICONS = [
   'heart', 'star', 'globe', 'briefcase', 'pen', 'coffee', 'map', 'gift',
 ];
 
-export const LINE_COLORS = ['#0e0f0c', '#6a6c6a', '#163300', '#5fb827', '#0097c7', '#008026', '#c2410c', '#b4236b'];
+export const LINE_COLORS = ['#050038', '#8c89a6', '#4262ff', '#f24726', '#fac710', '#8fd14f', '#12cdd4', '#9510ac'];
 
-/** Dark fills (forest, plus the slate from the earlier palette) take light text. */
+/** Dark fills take light text (navy, plus dark colors from earlier palettes). */
 export function isDark(color?: string) {
-  return color === '#163300' || color === '#2f3540' || color === '#323b4a';
+  return color === '#050038' || color === '#163300' || color === '#2f3540' || color === '#323b4a';
 }
 
 /** Creates a new element (and its target board for board cards) inside `boardId`. */
@@ -271,7 +273,7 @@ export function seedDoc(): Doc {
   const rootId = uid();
   const doc: Doc = {
     rootId,
-    boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#9fe870', icon: 'layout' } },
+    boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#ffd02f', icon: 'layout' } },
     elements: {},
     folders: {},
   };
@@ -284,14 +286,14 @@ export function seedDoc(): Doc {
   };
 
   const mood = createElement('board', rootId, 80, 80, 0);
-  doc.boards[mood.board!.id] = { ...mood.board!, title: 'Moodboard', color: '#ffd7ef', icon: 'palette' };
+  doc.boards[mood.board!.id] = { ...mood.board!, title: 'Moodboard', color: '#c6a2d2', icon: 'palette' };
   add(mood.el);
   const plan = createElement('board', rootId, 220, 80, 0);
-  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#a0e1e1', icon: 'rocket', folderId: workFolder };
+  doc.boards[plan.board!.id] = { ...plan.board!, title: 'Project plan', color: '#67c6c0', icon: 'rocket', folderId: workFolder };
   add(plan.el);
 
   const welcome = add({
-    id: uid(), type: 'note', boardId: rootId, x: 80, y: 270, w: 300, z: 0, color: '#e2f6d5',
+    id: uid(), type: 'note', boardId: rootId, x: 80, y: 270, w: 300, z: 0, color: '#fff9b1',
     html: '<h2>Welcome 👋</h2><div>This is your board. Drag cards from the toolbar on the left, or double-click anywhere to add a note.</div><ul><li>Click a card to edit it</li><li>Drag cards into a column to stack them</li><li>Drop a card onto a board to move it there</li></ul>',
   });
   const todo = add({
@@ -310,7 +312,7 @@ export function seedDoc(): Doc {
   const colId = uid();
   const c1 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, html: '<div>Columns keep related cards together.</div>' });
   const c2 = add({ id: uid(), type: 'link', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, url: 'https://en.wikipedia.org/wiki/Mood_board', title: 'Mood board — Wikipedia' });
-  const c3 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, color: '#ecf9f9', html: '<div>Drag a card out to pull it from the column.</div>' });
+  const c3 = add({ id: uid(), type: 'note', boardId: rootId, x: 0, y: 0, w: 260, z: 0, columnId: colId, color: '#a6ccf5', html: '<div>Drag a card out to pull it from the column.</div>' });
   add({ id: colId, type: 'column', boardId: rootId, x: 840, y: 80, w: 300, z: 0, title: 'Ideas', children: [c1, c2, c3] });
 
   add({ id: uid(), type: 'comment', boardId: rootId, x: 480, y: 520, w: 240, z: 0, text: 'Comments are handy for feedback on a board.', createdAt: Date.now() });

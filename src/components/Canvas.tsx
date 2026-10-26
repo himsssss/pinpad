@@ -200,9 +200,14 @@ export function Canvas() {
     });
     const l = Math.min(...rects.map((r) => r.l)), t = Math.min(...rects.map((r) => r.t));
     const rr = Math.max(...rects.map((r) => r.r)), b = Math.max(...rects.map((r) => r.b));
+    // Fit into the area left uncovered by the floating panels.
     const box = ref.current!.getBoundingClientRect();
-    const zoom = clampZoom(Math.min(1.25, (box.width - 120) / (rr - l), (box.height - 120) / (b - t)));
-    setView({ zoom, x: box.width / 2 - ((l + rr) / 2) * zoom, y: box.height / 2 - ((t + b) / 2) * zoom });
+    const left = (document.querySelector('.toolbar')?.getBoundingClientRect().right ?? box.left) - box.left + 32;
+    const top = 88;
+    const w = box.width - left - 32;
+    const h = box.height - top - 32;
+    const zoom = clampZoom(Math.min(1.25, w / (rr - l), h / (b - t)));
+    setView({ zoom, x: left + w / 2 - ((l + rr) / 2) * zoom, y: top + h / 2 - ((t + b) / 2) * zoom });
   };
 
   return (

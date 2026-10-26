@@ -63,8 +63,8 @@ desktop/        Electron shell and Windows icons
 
 ## Credits
 
-Pinpad is an independent project inspired by [Milanote](https://milanote.com). Its visual
-style follows a design system modeled on [Wise](https://wise.com)'s design language.
+Pinpad is an independent project inspired by [Milanote](https://milanote.com). Its layout and
+visual style follow a design system modeled on [Miro](https://miro.com)'s design language.
 Pinpad isn't affiliated with or endorsed by either company.
 
 ## License

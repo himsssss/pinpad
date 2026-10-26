@@ -39,6 +39,8 @@ function Tool({ label, icon: Icon, accent, active, onClick, onMouseDown, draggab
   return (
     <button
       className={`tool ${active ? 'active' : ''}`}
+      title={label}
+      aria-label={label}
       onClick={onClick}
       onMouseDown={onMouseDown}
       draggable={!!draggableType}

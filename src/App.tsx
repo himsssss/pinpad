@@ -13,6 +13,7 @@ const isTypingTarget = (t: EventTarget | null) =>
 export function App() {
   const [searching, setSearching] = useState(false);
   const boardTitle = useStore((s) => (s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title));
+  const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
 
   // The macOS app shows this as its window title.
   useEffect(() => {
@@ -112,13 +113,12 @@ export function App() {
   }, []);
 
   return (
-    <div className="app">
+    // The canvas fills the window; header, folders and tools float over it in rounded panels.
+    <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
+      <Canvas />
       <Header onSearch={() => setSearching(true)} />
-      <div className="app-body">
-        <Toolbar />
-        <Sidebar />
-        <Canvas />
-      </div>
+      <Sidebar />
+      <Toolbar />
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
     </div>
   );

@@ -108,7 +108,8 @@ function removeIfEmpty(id: string) {
   setState({ ui: { ...state.ui, selection: state.ui.selection.filter((s) => s !== id) } });
 }
 
-export const DEFAULT_VIEW: View = { x: 0, y: 0, zoom: 1 };
+/** Starts boards clear of the floating panels on the left and top. */
+export const DEFAULT_VIEW: View = { x: 300, y: 40, zoom: 1 };
 
 export function currentView(): View {
   return state.ui.views[state.ui.boardId] ?? DEFAULT_VIEW;
