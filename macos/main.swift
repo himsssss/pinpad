@@ -583,9 +583,8 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   /// The signed-in account's email, from Google Drive.
-  nonisolated private static func fetchEmail(accessToken: String, done: @escaping @Sendable (String?) -> Void) {
-    guard let url = URL(string: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)") else { return done(nil) }
-    var request = URLRequest(url: url, timeoutInterval: 15)
+  nonisolated private static func fetchEmail(accessToken: String, done: @escaping @MainActor @Sendable (String?) -> Void) {
+    var request = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")!, timeoutInterval: 15)
     request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
     URLSession.shared.dataTask(with: request) { data, _, _ in
       let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
