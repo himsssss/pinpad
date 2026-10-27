@@ -77,6 +77,8 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       ].join(' ')}
       style={style}
       onPointerDown={onPointerDown}
+      // A native drag (of a link, image or selected text) would take the pointer away mid-move.
+      onDragStart={(e) => !editing && e.preventDefault()}
       onDoubleClick={(e) => {
         e.stopPropagation();
         if (el.type === 'board') openBoard(el.targetId);
