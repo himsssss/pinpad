@@ -4,7 +4,7 @@
  * browser (website). One is open at a time and each has its own folders and projects.
  */
 
-import { flushNow, switchStorage, usingDrive, getState } from './store';
+import { browserHasBoards, flushNow, switchStorage, usingDrive, getState } from './store';
 import { nativeStorage } from './native';
 import { driveStorage } from './driveStorage';
 import { ensureAccount, googleAccount, googleAccounts, googleAllowedHere, googleConfigured, signIn, signOut, useAccount } from './googleAuth';
@@ -78,7 +78,9 @@ export async function openPlace(place: Place, choose: NewPlaceChoice) {
     if (keep) await switchStorage({ kind: 'folder', folder }, keep);
     return;
   }
-  await switchStorage({ kind: 'browser' }, 'open');
+  if (await browserHasBoards()) return switchStorage({ kind: 'browser' }, 'open');
+  const keep = await choose('this browser');
+  if (keep) await switchStorage({ kind: 'browser' }, keep);
 }
 
 /** Connects another Google account (Google lets the user pick which) and opens its Drive. */

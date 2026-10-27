@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Folder, FolderCog, FolderPlus, Monitor, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, Folder, FolderCog, FolderPlus, LogOut, Monitor, Plus, X } from 'lucide-react';
 import { browse, useStore } from '../store';
 import { nativeStorage } from '../native';
 import { googleAllowedHere, googleConfigured } from '../googleAuth';
@@ -73,16 +73,26 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
 
   const remove = async (place: Place) => {
     const { name, detail } = describePlace(place, false);
+    const current = place.id === list?.current;
+    // Leaving the open place first: this browser on the website, the default folder in the apps.
+    const fallback = current ? list?.places.find((p) => p.kind === 'browser' || (p.kind === 'folder' && p.isDefault)) : undefined;
+    const fallbackName = fallback ? describePlace(fallback, false).name : '';
     const ok = await askConfirm({
       title: place.kind === 'drive' ? `Disconnect ${detail}?` : `Remove “${name}” from the list?`,
       message:
         place.kind === 'drive'
-          ? 'Pinpad signs out of this Google account on this device. Your boards stay in its Google Drive.'
+          ? `Pinpad signs out of this Google account on this device. Your boards stay in its Google Drive.${
+              current ? ` Pinpad switches to ${fallbackName}, copying your boards there if it's empty.` : ''
+            }`
           : 'The folder and its files stay on your computer; it just leaves this list.',
       confirm: place.kind === 'drive' ? 'Disconnect' : 'Remove',
+      danger: place.kind === 'drive',
     });
-    if (ok) await removePlace(place);
-    refresh();
+    if (!ok) return refresh();
+    await run(async () => {
+      if (current && fallback) await openPlace(fallback, async () => 'replace');
+      await removePlace(place);
+    });
   };
 
   return (
@@ -130,8 +140,13 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
                   </span>
                   {current && <Check size={16} className="place-check" />}
                 </button>
-                {!current && place.kind !== 'browser' && !(place.kind === 'folder' && place.isDefault) && (
-                  <button className="place-remove" aria-label={place.kind === 'drive' ? `Disconnect ${detail}` : `Remove ${name}`} title={place.kind === 'drive' ? 'Disconnect' : 'Remove from list'} onClick={() => remove(place)}>
+                {place.kind === 'drive' && (
+                  <button className="place-remove" disabled={busy} aria-label={`Disconnect ${detail}`} title="Disconnect this Google account" onClick={() => remove(place)}>
+                    <LogOut size={14} /> <span>Disconnect</span>
+                  </button>
+                )}
+                {place.kind === 'folder' && !current && !place.isDefault && (
+                  <button className="place-remove" disabled={busy} aria-label={`Remove ${name}`} title="Remove from list (the folder stays)" onClick={() => remove(place)}>
                     <X size={14} />
                   </button>
                 )}

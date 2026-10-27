@@ -436,6 +436,11 @@ async function refreshStorageName() {
   if (name !== state.storageName) setState({ storageName: name });
 }
 
+/** Whether this browser has its own boards saved (the website's "This browser" place). */
+export async function browserHasBoards() {
+  return !!(await load<Doc>('doc').catch(() => undefined));
+}
+
 /** Shows another workspace, with a clean undo history. */
 function showDoc(doc: Doc) {
   past = [];
