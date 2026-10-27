@@ -7,6 +7,11 @@ device.
 
 ![Pinpad home board](docs/screenshot.png)
 
+## Try it
+
+Open **[himsssss.github.io/pinpad](https://himsssss.github.io/pinpad/)** to use Pinpad in your browser. Boards
+are saved in that browser only; the desktop apps save them as files you can back up.
+
 ## Download
 
 Get the latest build from the [Releases](../../releases) page:
@@ -40,6 +45,7 @@ Requires Node.js 22+.
 npm install
 npm run dev          # web app at http://localhost:3000
 npm run build        # production web build in dist/
+npm run deploy:web   # publish that build to GitHub Pages (gh-pages branch)
 ```
 
 ### Desktop apps
