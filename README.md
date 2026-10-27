@@ -62,6 +62,23 @@ Every push to `main` rebuilds the web app and publishes it to GitHub Pages
 The macOS app is a small Swift/AppKit wrapper around a WebKit view (`macos/`); the Windows
 app uses Electron (`desktop/`). Both load the same web build from inside the app bundle.
 
+## Google Drive
+
+The Storage location dialog can save boards to Google Drive (in "My Drive/Pinpad"). It needs
+OAuth clients from a Google Cloud project you own:
+
+1. In the [Google Cloud console](https://console.cloud.google.com), create a project and enable
+   the **Google Drive API**.
+2. Under **Google Auth Platform**, set up the consent screen (External audience). Pinpad only
+   asks for the `drive.file` scope (files it creates itself), which Google doesn't treat as
+   sensitive.
+3. Create a **Web application** client with these authorized JavaScript origins:
+   `https://himsssss.github.io` and `http://localhost:5180`.
+4. Create a **Desktop app** client for the Mac and Windows apps.
+5. Copy `.env.example` to `.env.local` and fill in the ids (and the desktop client's secret).
+   For the GitHub Pages build, also put `VITE_GOOGLE_WEB_CLIENT_ID=...` in a committed `.env`
+   file; client ids aren't secret.
+
 ## Project layout
 
 ```
@@ -69,6 +86,7 @@ src/            React + TypeScript web app (Vite)
   components/   canvas, toolbar, sidebar, cards
   store.ts      state, undo history, persistence (IndexedDB, plus board files on desktop)
   workspaceFiles.ts  how the workspace is laid out as files on disk
+  driveStorage.ts    the same files kept in Google Drive (googleAuth.ts signs in)
   native.ts     what the desktop apps expose to the page
 macos/          native macOS shell, icon generator, build/install scripts
 desktop/        Electron shell and Windows icons

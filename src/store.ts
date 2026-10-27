@@ -4,6 +4,8 @@ import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { deleteElements, seedDoc } from './doc';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
+import { driveStorage } from './driveStorage';
+import { SignInNeeded } from './googleAuth';
 import { assembleWorkspace, INDEX_FILE, layoutWorkspace, parseIndex, type Layout } from './workspaceFiles';
 
 export interface State {
@@ -163,7 +165,32 @@ function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'colla
   }
 }
 
-/** Set when the workspace files exist but couldn't be read, so they're never overwritten. */
+/** Where board files are saved: a storage folder (desktop apps), Google Drive, or nowhere. */
+type Backend = Pick<NativeStorage, 'read' | 'write'>;
+export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'browser' };
+
+/** Per device: whether this computer or browser keeps its boards in Google Drive. */
+const MODE_KEY = 'pinpad:storage';
+export function usingDrive() {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'drive';
+  } catch {
+    return false;
+  }
+}
+function setUsingDrive(on: boolean) {
+  try {
+    if (on) localStorage.setItem(MODE_KEY, 'drive');
+    else localStorage.removeItem(MODE_KEY);
+  } catch {
+    // Without storage the choice lasts for this session only.
+  }
+}
+const currentBackend = (): Backend | undefined => (usingDrive() ? driveStorage : nativeStorage());
+const placeName = () => (usingDrive() ? 'Google Drive' : 'your storage folder');
+
+let backend: Backend | undefined;
+/** Set when the saved files exist but couldn't be read, so they're never overwritten. */
 let fileBlocked = false;
 /** File writes run one at a time, in order. */
 let writing: Promise<unknown> = Promise.resolve();
@@ -172,6 +199,9 @@ let onDisk: Layout = { files: new Map(), paths: new Map() };
 const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Whether saving is stopped because the saved files couldn't be loaded. */
+export const storageBlocked = () => fileBlocked;
 
 /** What to write, and which old files to clear away, to go from onDisk to the next layout. */
 function changesTo(next: Layout): StorageBatch {
@@ -189,32 +219,40 @@ function changesTo(next: Layout): StorageBatch {
 }
 
 function writeFiles(doc: Doc) {
-  const storage = nativeStorage();
-  if (!storage || fileBlocked) return writing;
+  const target = backend;
+  if (!target || fileBlocked) return writing;
   writing = writing.then(async () => {
     const next = layoutWorkspace(doc);
     const batch = changesTo(next);
     if (!batch.write.length && !batch.remove.length && !batch.trash.length) return;
     try {
-      await storage.write(batch);
+      await target.write(batch);
       onDisk = next;
       if (state.storageError) setState({ storageError: null });
     } catch (err) {
-      setState({ storageError: `Couldn't save to your storage folder: ${errorText(err)}` });
+      // onDisk stays as it was, so the next save retries everything that didn't go through.
+      setState({
+        storageError: err instanceof SignInNeeded ? err.message : `Couldn't save to ${placeName()}: ${errorText(err)}`,
+      });
     }
   });
   return writing;
 }
 
-/** Loads the workspace from the storage folder; null when the folder has none yet. */
-async function readFiles(storage: NativeStorage): Promise<{ doc: Doc; disk: Layout } | null> {
-  const indexText = (await storage.read([INDEX_FILE]))[INDEX_FILE];
+/** Saves the current boards again after a failure (say, once Google sign-in is renewed). */
+export function retrySave() {
+  return writeFiles(state.doc);
+}
+
+/** Loads the saved workspace; null when there's none there yet. */
+async function readFiles(from: Backend): Promise<{ doc: Doc; disk: Layout } | null> {
+  const indexText = (await from.read([INDEX_FILE]))[INDEX_FILE];
   if (indexText == null) return null;
   const parsed = parseIndex(indexText);
   // The earlier single-file format: the next save splits it into board files.
   if ('doc' in parsed) return { doc: parsed.doc, disk: nothingOnDisk() };
   const paths = Object.values(parsed.index.boards);
-  const texts = await storage.read(paths);
+  const texts = await from.read(paths);
   const doc = assembleWorkspace(parsed.index, texts);
   const files = new Map(paths.map((p) => [p, texts[p] ?? '']));
   files.set(INDEX_FILE, indexText);
@@ -236,45 +274,56 @@ export async function flushNow() {
 }
 
 /**
- * Points the desktop app at another storage folder. "open" loads the workspace already in
- * that folder; "replace" sends that workspace's board files to the Trash and writes the
- * current boards there. The old folder is left alone either way.
+ * Moves where boards are saved: another storage folder, Google Drive, or (on the website)
+ * just this browser. "open" loads the workspace already at the new place; "replace" sends
+ * that workspace's board files to the Trash and saves the current boards there. The old
+ * place is left alone either way.
  */
-export async function switchStorageFolder(folder: string | null, keep: 'open' | 'replace') {
-  const storage = nativeStorage();
-  if (!storage) return;
+export async function switchStorage(target: StorageTarget, keep: 'open' | 'replace') {
   await flushNow();
-  const previous = await storage.location();
-  await storage.use(folder);
+  const native = nativeStorage();
+  const wasDrive = usingDrive();
+  const previous = target.kind === 'folder' && native ? await native.location() : null;
+  if (target.kind === 'folder') await native?.use(target.folder);
+  if (target.kind === 'drive') driveStorage.reset();
+  setUsingDrive(target.kind === 'drive');
+  backend = currentBackend();
+  fileBlocked = false;
+  if (!backend) {
+    // The website without Drive: the boards stay in this browser's storage.
+    onDisk = nothingOnDisk();
+    setState({ storageError: null });
+    return;
+  }
   if (keep === 'replace') {
     // Its board files go to the Trash first, even ones a current board is about to reuse
     // the name of (every workspace has a Home.json), so nothing is overwritten unrecoverably.
     let replaced: string[] = [];
     try {
-      const indexText = (await storage.read([INDEX_FILE]))[INDEX_FILE];
+      const indexText = (await backend.read([INDEX_FILE]))[INDEX_FILE];
       const parsed = indexText ? parseIndex(indexText) : null;
       if (parsed && 'index' in parsed) replaced = Object.values(parsed.index.boards);
     } catch {
       // An unreadable index there just gets overwritten.
     }
-    if (replaced.length) await storage.write({ write: [], remove: [], trash: replaced });
+    if (replaced.length) await backend.write({ write: [], remove: [], trash: replaced });
     onDisk = nothingOnDisk();
-    fileBlocked = false;
     setState({ storageError: null });
     await writeFiles(state.doc);
     return;
   }
   let found: Awaited<ReturnType<typeof readFiles>>;
   try {
-    found = await readFiles(storage);
-    if (!found) throw new Error('No Pinpad workspace in that folder');
+    found = await readFiles(backend);
+    if (!found) throw new Error(target.kind === 'drive' ? 'No Pinpad workspace in Google Drive' : 'No Pinpad workspace in that folder');
   } catch (err) {
-    await storage.use(previous.isDefault ? null : previous.folder);
+    if (previous && native) await native.use(previous.isDefault ? null : previous.folder);
+    setUsingDrive(wasDrive);
+    backend = currentBackend();
     throw err;
   }
   const { doc, disk } = found;
   onDisk = disk;
-  fileBlocked = false;
   past = [];
   future = [];
   pendingBase = null;
@@ -297,19 +346,20 @@ function schedulePersist() {
 export async function initStore() {
   let doc = await load<Doc>('doc').catch(() => undefined);
   let storageError: string | null = null;
-  const storage = nativeStorage();
-  if (storage) {
-    // The files in the storage folder win; IndexedDB is the fallback and, the first time
-    // folder storage is used, the boards that get written out as files.
+  backend = currentBackend();
+  if (backend) {
+    // The saved files win; IndexedDB is the fallback and, the first time files are used, the
+    // boards that get written out.
     try {
-      const found = await readFiles(storage);
+      const found = await readFiles(backend);
       if (found) {
         doc = found.doc;
         onDisk = found.disk;
       }
     } catch (err) {
       fileBlocked = true;
-      storageError = `Couldn't read the workspace in your storage folder (${errorText(err)}). Showing the copy saved in the app; nothing will be written to that folder until you choose one in Storage location.`;
+      const reason = err instanceof SignInNeeded ? 'you need to sign in again' : errorText(err);
+      storageError = `Couldn't open your boards in ${placeName()} (${reason}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until you open Storage location and fix this.`;
     }
   }
   const savedUI = loadUI();

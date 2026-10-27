@@ -46,12 +46,33 @@ export interface NativeStorage {
   reveal(): Promise<boolean>;
 }
 
+/** OAuth client of the desktop apps (an "installed app" client, whose secret isn't confidential). */
+export interface GoogleClient {
+  clientId: string;
+  clientSecret: string;
+}
+
+export interface GoogleToken {
+  accessToken: string;
+  /** Seconds the access token stays valid. */
+  expiresIn: number;
+}
+
+/** Google sign-in through the system browser; the refresh token stays in the native shell. */
+export interface NativeGoogle {
+  signIn(client: GoogleClient): Promise<GoogleToken>;
+  /** A fresh access token from the saved sign-in, or null when the user has to sign in again. */
+  token(client: GoogleClient): Promise<GoogleToken | null>;
+  signOut(): Promise<boolean>;
+}
+
 declare global {
   interface Window {
     pinpadNative?: {
       fetchPage(url: string): Promise<PageResponse | null>;
       embedBase?: string;
       storage?: NativeStorage;
+      google?: NativeGoogle;
     };
   }
 }

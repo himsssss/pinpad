@@ -2,7 +2,9 @@
 // loads the built web app from the bundle's Resources/web folder.
 
 import Cocoa
+import CryptoKit
 import Network
+import Security
 import UniformTypeIdentifiers
 import WebKit
 
@@ -330,6 +332,244 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
+/// Google sign-in for saving boards to Google Drive, using Google's flow for installed apps:
+/// the default browser opens Google's consent page, which redirects back to a one-off
+/// loopback address with a code (PKCE). The refresh token is kept in the Keychain so later
+/// launches get access tokens without asking again. Exposed as `window.pinpadNative.google`;
+/// mirrors google() in desktop/main.cjs.
+@MainActor
+final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
+  static let script = """
+    (() => {
+      const call = (op, config) => window.webkit.messageHandlers.google.postMessage({ op, config: config ?? null });
+      window.pinpadNative = Object.assign(window.pinpadNative || {}, { google: {
+        signIn: (config) => call('signIn', config),
+        token: (config) => call('token', config),
+        signOut: () => call('signOut'),
+      } });
+    })();
+    """
+  nonisolated private static let scope = "https://www.googleapis.com/auth/drive.file"
+  nonisolated private static let keychainService = "Pinpad Google Drive"
+
+  struct AuthError: LocalizedError {
+    let errorDescription: String?
+    var code: String?
+  }
+
+  typealias Reply = @MainActor @Sendable (Any?, String?) -> Void
+
+  private var listener: NWListener?
+  private var redirectURI = ""
+  private var finishSignIn: ((Result<String, Error>) -> Void)?
+
+  func userContentController(
+    _ controller: WKUserContentController,
+    didReceive message: WKScriptMessage,
+    replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
+  ) {
+    guard let body = message.body as? [String: Any], let op = body["op"] as? String else {
+      replyHandler(nil, "Bad Google request")
+      return
+    }
+    let config = body["config"] as? [String: Any] ?? [:]
+    let clientId = config["clientId"] as? String ?? ""
+    let secret = config["clientSecret"] as? String ?? ""
+    switch op {
+    case "signIn":
+      signIn(clientId: clientId, secret: secret, reply: replyHandler)
+    case "token":
+      guard let refresh = Self.loadRefreshToken() else { return replyHandler(NSNull(), nil) }
+      Self.tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientId, "client_secret": secret]) { result in
+        switch result {
+        case .success(let json):
+          replyHandler(Self.tokenReply(json), nil)
+        case .failure(let error as AuthError) where error.code == "invalid_grant":
+          // Revoked or expired: the user signs in again. Other failures (offline) are retried later.
+          Self.deleteRefreshToken()
+          replyHandler(NSNull(), nil)
+        case .failure(let error):
+          replyHandler(nil, error.localizedDescription)
+        }
+      }
+    case "signOut":
+      if let refresh = Self.loadRefreshToken(),
+        let url = URL(string: "https://oauth2.googleapis.com/revoke?token=\(Self.formEncode(refresh))")
+      {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        URLSession.shared.dataTask(with: request).resume()
+      }
+      Self.deleteRefreshToken()
+      replyHandler(true, nil)
+    default:
+      replyHandler(nil, "Unknown Google request \(op)")
+    }
+  }
+
+  private func signIn(clientId: String, secret: String, reply: @escaping Reply) {
+    finishSignIn?(.failure(AuthError(errorDescription: "Sign-in was restarted")))
+    let verifier = Self.randomURLSafe(32)
+    let challenge = Self.base64url(Data(SHA256.hash(data: Data(verifier.utf8))))
+    let state = Self.randomURLSafe(16)
+    let params = NWParameters.tcp
+    params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+    guard let listener = try? NWListener(using: params) else { return reply(nil, "Couldn't start Google sign-in") }
+    self.listener = listener
+    redirectURI = ""
+
+    let timeout = DispatchWorkItem { [weak self] in
+      self?.finishSignIn?(.failure(AuthError(errorDescription: "Sign-in timed out")))
+    }
+    finishSignIn = { [weak self] result in
+      guard let self else { return }
+      timeout.cancel()
+      self.finishSignIn = nil
+      self.listener?.cancel()
+      self.listener = nil
+      switch result {
+      case .failure(let error):
+        reply(nil, error.localizedDescription)
+      case .success(let code):
+        Self.tokenRequest([
+          "grant_type": "authorization_code", "code": code, "client_id": clientId, "client_secret": secret,
+          "redirect_uri": self.redirectURI, "code_verifier": verifier,
+        ]) { result in
+          switch result {
+          case .success(let json):
+            if let refresh = json["refresh_token"] as? String { Self.saveRefreshToken(refresh) }
+            NSApp.activate(ignoringOtherApps: true)
+            reply(Self.tokenReply(json), nil)
+          case .failure(let error):
+            reply(nil, error.localizedDescription)
+          }
+        }
+      }
+    }
+
+    listener.newConnectionHandler = { [weak self] connection in
+      guard let owner = self else { return connection.cancel() }
+      Self.receiveRedirect(on: connection, state: state) { [weak owner] result in owner?.finishSignIn?(result) }
+    }
+    listener.stateUpdateHandler = { [weak self] listenerState in
+      DispatchQueue.main.async {
+        guard let self, self.listener === listener else { return }
+        switch listenerState {
+        case .ready:
+          guard self.redirectURI.isEmpty, let port = listener.port?.rawValue else { return }
+          self.redirectURI = "http://127.0.0.1:\(port)"
+          var auth = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
+          auth.queryItems = [
+            "client_id": clientId, "redirect_uri": self.redirectURI, "response_type": "code", "scope": Self.scope,
+            "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
+            "access_type": "offline", "prompt": "consent",
+          ].map { URLQueryItem(name: $0.key, value: $0.value) }
+          NSWorkspace.shared.open(auth.url!)
+          DispatchQueue.main.asyncAfter(deadline: .now() + 300, execute: timeout)
+        case .failed:
+          self.finishSignIn?(.failure(AuthError(errorDescription: "Couldn't start Google sign-in")))
+        default:
+          break
+        }
+      }
+    }
+    listener.start(queue: .global(qos: .userInitiated))
+  }
+
+  /// Answers the browser's redirect and reports the code; other requests (a favicon) get a 404.
+  nonisolated private static func receiveRedirect(
+    on connection: NWConnection, state: String, done: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
+  ) {
+    connection.start(queue: .global(qos: .userInitiated))
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { data, _, _, _ in
+      let request = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+      let target = request.split(separator: " ", maxSplits: 2).dropFirst().first.map(String.init) ?? ""
+      let components = URLComponents(string: "http://127.0.0.1" + target)
+      let respond = { (status: String, body: String) in
+        let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in connection.cancel() })
+      }
+      guard components?.path == "/" else { return respond("404 Not Found", "Not found") }
+      let items = components?.queryItems ?? []
+      let value = { (name: String) in items.first { $0.name == name }?.value }
+      let code = value("state") == state ? value("code") : nil
+      let message = code != nil
+        ? "Signed in to Google Drive. You can close this tab and go back to Pinpad."
+        : "Sign-in was cancelled. You can close this tab."
+      respond("200 OK", "<!doctype html><meta charset=\"utf-8\"><title>Pinpad</title><body style=\"font:16px system-ui;display:grid;place-items:center;height:90vh;color:#050038\">\(message)</body>")
+      let cancelled = value("error") == "access_denied"
+      DispatchQueue.main.async {
+        if let code { done(.success(code)) }
+        else { done(.failure(AuthError(errorDescription: cancelled ? "Sign-in was cancelled" : "Sign-in failed"))) }
+      }
+    }
+  }
+
+  nonisolated private static func tokenRequest(
+    _ params: [String: String], done: @escaping @MainActor @Sendable (Result<[String: Any], Error>) -> Void
+  ) {
+    var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!, timeoutInterval: 20)
+    request.httpMethod = "POST"
+    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+    request.httpBody = Data(params.map { "\($0.key)=\(formEncode($0.value))" }.joined(separator: "&").utf8)
+    URLSession.shared.dataTask(with: request) { data, response, error in
+      let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      let failure = AuthError(
+        errorDescription: json["error_description"] as? String ?? json["error"] as? String ?? error?.localizedDescription
+          ?? "Google sign-in failed (\(status))",
+        code: json["error"] as? String)
+      let result: Result<[String: Any], Error> = (200..<300).contains(status) ? .success(json) : .failure(failure)
+      DispatchQueue.main.async { done(result) }
+    }.resume()
+  }
+
+  nonisolated private static func tokenReply(_ json: [String: Any]) -> [String: Any] {
+    ["accessToken": json["access_token"] ?? NSNull(), "expiresIn": json["expires_in"] ?? 3600]
+  }
+
+  nonisolated private static func formEncode(_ value: String) -> String {
+    var allowed = CharacterSet.alphanumerics
+    allowed.insert(charactersIn: "-._~")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+  }
+
+  nonisolated private static func base64url(_ data: Data) -> String {
+    data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  nonisolated private static func randomURLSafe(_ count: Int) -> String {
+    var bytes = [UInt8](repeating: 0, count: count)
+    _ = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
+    return base64url(Data(bytes))
+  }
+
+  nonisolated private static var keychainItem: [String: Any] {
+    [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: "refresh-token"]
+  }
+
+  nonisolated private static func saveRefreshToken(_ token: String) {
+    SecItemDelete(keychainItem as CFDictionary)
+    var item = keychainItem
+    item[kSecValueData as String] = Data(token.utf8)
+    SecItemAdd(item as CFDictionary, nil)
+  }
+
+  nonisolated private static func loadRefreshToken() -> String? {
+    var query = keychainItem
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    var result: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+    return String(data: data, encoding: .utf8)
+  }
+
+  nonisolated private static func deleteRefreshToken() {
+    SecItemDelete(keychainItem as CFDictionary)
+  }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   private var window: NSWindow!
@@ -352,6 +592,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     config.userContentController.addScriptMessageHandler(StorageBridge(), contentWorld: .page, name: "storage")
     config.userContentController.addUserScript(
       WKUserScript(source: StorageBridge.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    config.userContentController.addScriptMessageHandler(GoogleAuth(), contentWorld: .page, name: "google")
+    config.userContentController.addUserScript(
+      WKUserScript(source: GoogleAuth.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.userContentController.addUserScript(
       WKUserScript(source: ConsoleLogger.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 

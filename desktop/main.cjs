@@ -1,7 +1,8 @@
 // Electron shell for Pinpad (used for the Windows build): one window that loads the built web
 // app from inside the package over a custom scheme, so IndexedDB and localStorage persist.
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, safeStorage, shell } = require('electron');
+const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
@@ -203,6 +204,116 @@ async function storage(event, op, arg) {
   }
 }
 
+/**
+ * Google sign-in for saving boards to Google Drive, using Google's flow for installed apps:
+ * the system browser opens Google's consent page, which redirects back to a one-off loopback
+ * address with a code (PKCE). The refresh token is kept encrypted in the app's data folder so
+ * later launches get access tokens without asking again. Mirrors GoogleAuth in macos/main.swift.
+ */
+const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const googleTokenPath = () => path.join(app.getPath('userData'), 'google-token.bin');
+const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+let pendingSignIn = null;
+
+async function saveRefreshToken(token) {
+  const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(token) : Buffer.from(token);
+  await fs.writeFile(googleTokenPath(), data);
+}
+
+async function loadRefreshToken() {
+  try {
+    const data = await fs.readFile(googleTokenPath());
+    return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(data) : data.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function googleTokenRequest(params) {
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json.error_description || json.error || `Google sign-in failed (${res.status})`), { code: json.error });
+  return json;
+}
+
+const signInPage = (message) =>
+  `<!doctype html><meta charset="utf-8"><title>Pinpad</title><body style="font:16px system-ui;display:grid;place-items:center;height:90vh;color:#050038">${message}</body>`;
+
+async function googleSignIn({ clientId, clientSecret }) {
+  pendingSignIn?.(new Error('Sign-in was restarted'));
+  const verifier = base64url(crypto.randomBytes(32));
+  const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
+  const state = base64url(crypto.randomBytes(16));
+  const server = http.createServer();
+  await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
+  const redirectUri = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const code = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Sign-in timed out')), 5 * 60 * 1000);
+      pendingSignIn = (err) => { clearTimeout(timer); reject(err); };
+      server.on('request', (req, res) => {
+        const url = new URL(req.url, redirectUri);
+        if (url.pathname !== '/') return res.writeHead(404).end();
+        const ok = url.searchParams.get('state') === state && url.searchParams.get('code');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          .end(signInPage(ok ? 'Signed in to Google Drive. You can close this tab and go back to Pinpad.' : 'Sign-in was cancelled. You can close this tab.'));
+        clearTimeout(timer);
+        if (ok) resolve(url.searchParams.get('code'));
+        else reject(new Error(url.searchParams.get('error') === 'access_denied' ? 'Sign-in was cancelled' : 'Sign-in failed'));
+      });
+      const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      for (const [k, v] of Object.entries({
+        client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: GOOGLE_SCOPE, state,
+        code_challenge: challenge, code_challenge_method: 'S256', access_type: 'offline', prompt: 'consent',
+      })) auth.searchParams.set(k, v);
+      shell.openExternal(auth.toString());
+    });
+    const tokens = await googleTokenRequest({
+      grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code_verifier: verifier,
+    });
+    if (tokens.refresh_token) await saveRefreshToken(tokens.refresh_token);
+    BrowserWindow.getAllWindows()[0]?.focus();
+    return { accessToken: tokens.access_token, expiresIn: tokens.expires_in };
+  } finally {
+    pendingSignIn = null;
+    server.close();
+  }
+}
+
+async function google(_event, op, arg) {
+  switch (op) {
+    case 'signIn':
+      return googleSignIn(arg);
+    case 'token': {
+      const refresh = await loadRefreshToken();
+      if (!refresh) return null;
+      try {
+        const tokens = await googleTokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: arg.clientId, client_secret: arg.clientSecret });
+        return { accessToken: tokens.access_token, expiresIn: tokens.expires_in };
+      } catch (err) {
+        // A revoked or expired grant means signing in again; anything else (offline) is retried later.
+        if (err.code === 'invalid_grant') {
+          await fs.rm(googleTokenPath(), { force: true });
+          return null;
+        }
+        throw err;
+      }
+    }
+    case 'signOut': {
+      const refresh = await loadRefreshToken();
+      await fs.rm(googleTokenPath(), { force: true });
+      if (refresh) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refresh)}`, { method: 'POST' }).catch(() => {});
+      return true;
+    }
+    default:
+      throw new Error(`Unknown Google request ${op}`);
+  }
+}
+
 const isAppUrl = (url) => url.startsWith(`${SCHEME}://`);
 const isWebUrl = (url) => /^https?:\/\//i.test(url);
 
@@ -279,6 +390,7 @@ app.whenReady().then(async () => {
   protocol.handle(SCHEME, serveBundle);
   ipcMain.handle('pinpad:fetch-page', fetchPage);
   ipcMain.handle('pinpad:storage', storage);
+  ipcMain.handle('pinpad:google', google);
   embedBase = await startEmbedServer();
   ipcMain.on('pinpad:embed-base', (event) => {
     event.returnValue = embedBase;

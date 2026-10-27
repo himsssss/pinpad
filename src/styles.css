@@ -595,6 +595,10 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .dialog { width: min(520px, calc(100vw - 32px)); padding: 20px 24px 24px; background: var(--panel); border-radius: var(--r-xl); box-shadow: var(--shadow-4); align-self: flex-start; }
 .dialog-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -8px 4px 0; }
 .dialog-head h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--ink); }
+.segmented { display: flex; gap: 4px; padding: 4px; margin: 4px 0 16px; border-radius: var(--r-md); background: var(--surface); }
+.segmented button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 34px; border-radius: var(--r-sm); font-size: 14px; font-weight: 500; color: var(--slate); }
+.segmented button[aria-selected='true'] { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-1); }
+.segmented-badge { padding: 1px 7px; border-radius: var(--r-full); background: var(--blue-tint); color: var(--blue); font-size: 11px; font-weight: 600; }
 .dialog-text { margin: 0 0 16px; color: var(--slate); font-size: 14px; line-height: 1.5; }
 .dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .dialog-actions .btn-primary { margin-left: 0; }

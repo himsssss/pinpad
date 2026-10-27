@@ -4,6 +4,7 @@ import type { Doc } from '../types';
 import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { parseWorkspace } from '../workspaceFiles';
 import { nativeStorage } from '../native';
+import { googleConfigured } from '../googleAuth';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
@@ -125,7 +126,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           <button className="icon-btn" onClick={() => setMenu((m) => !m)} aria-label="Settings" title="Settings"><Settings size={18} /></button>
           {menu && (
             <div className="menu">
-              {nativeStorage() && (
+              {(nativeStorage() || googleConfigured()) && (
                 <button onClick={() => { setStorageOpen(true); setMenu(false); }}><FolderCog size={14} /> Storage location…</button>
               )}
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
