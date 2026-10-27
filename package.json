@@ -1,7 +1,7 @@
 {
   "name": "pinpad",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Pinpad: boards for notes, images, links and to-dos.",
   "author": "Himanshu Singh",
   "license": "MIT",
