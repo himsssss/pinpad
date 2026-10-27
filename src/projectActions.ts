@@ -6,7 +6,8 @@
 import { getState, mutate, openBoard, setUI } from './store';
 import { current, isDraft } from 'immer';
 import { cloneElements, createElement, deleteElements, maxZ, uid } from './doc';
-import type { Doc, El, Renaming, TrashEntry } from './types';
+import type { Board, Doc, El, Renaming, SavedTemplate, TrashEntry } from './types';
+import { viewportCenter } from './interactions';
 
 export const BOARD_MIME = 'application/x-pinpad-board';
 export const FOLDER_MIME = 'application/x-pinpad-folder';
@@ -25,21 +26,133 @@ const homeCard = (doc: Doc, boardId: string) =>
   Object.values(doc.elements).find((e) => e.type === 'board' && e.boardId === doc.rootId && e.targetId === boardId);
 
 /** Adds a board to Home (right of everything already there), files it, and opens it. */
-export function newProject(folderId?: string) {
+export function newProject(folderId?: string, template?: SavedTemplate) {
   const { doc } = getState();
   const onHome = Object.values(doc.elements).filter((e) => e.boardId === doc.rootId && !e.columnId && e.type !== 'line');
   const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
   const { el, board } = createElement('board', doc.rootId, x, 80, maxZ(doc) + 1);
   if (!board) return;
-  board.title = 'Untitled project';
+  const look = template?.boards.find((b) => b.id === template.rootId);
+  board.title = template ? template.name : 'Untitled project';
+  if (look) Object.assign(board, { color: look.color, icon: look.icon });
   board.folderId = folderId;
   mutate((d) => {
     d.elements[el.id] = el;
     d.boards[board.id] = board;
+    if (template) copyTemplate(d, template, board.id, 0, 0);
   });
   openBoard(board.id);
   // Let the user name it straight away in the board title field.
   requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.board-heading')?.select());
+}
+
+// ---- Saved templates ----
+
+/** A board and every board inside it. */
+function boardTree(doc: Doc, rootId: string) {
+  const ids = new Set([rootId]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const b of Object.values(doc.boards)) {
+      if (b.parentId && ids.has(b.parentId) && !ids.has(b.id)) {
+        ids.add(b.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** Saves a board (with the boards inside it) as a template, and starts renaming it in the sidebar. */
+export function saveAsTemplate(boardId: string) {
+  const { doc } = getState();
+  const board = doc.boards[boardId];
+  if (!board) return;
+  const ids = boardTree(doc, boardId);
+  const plain = <T>(v: T): T => structuredClone(v);
+  const boards: Board[] = [...ids].map((id) => {
+    const { folderId: _folder, updatedAt: _edited, ...rest } = plain(doc.boards[id]);
+    return rest;
+  });
+  const template: SavedTemplate = {
+    id: uid(),
+    name: board.title || 'Untitled',
+    createdAt: Date.now(),
+    rootId: boardId,
+    boards,
+    elements: Object.values(doc.elements).filter((e) => ids.has(e.boardId)).map(plain),
+  };
+  mutate((d) => {
+    d.templates = [template, ...(d.templates ?? [])];
+  });
+  setUI((u) => ({ renaming: { id: template.id, where: 'sidebar' }, collapsedSections: u.collapsedSections.filter((s) => s !== 'templates') }));
+  return template.id;
+}
+
+/**
+ * Copies a template's cards into a board, with new ids throughout: boards inside it become
+ * new boards inside the target, and cards, columns, lines and board cards keep pointing at
+ * each other. Cards placed freely on the template board move by (dx, dy).
+ */
+function copyTemplate(d: Doc, template: SavedTemplate, targetId: string, dx: number, dy: number) {
+  const boardIds = new Map<string, string>(template.boards.filter((b) => b.id !== template.rootId).map((b) => [b.id, uid()]));
+  boardIds.set(template.rootId, targetId);
+  const elIds = new Map<string, string>(template.elements.map((e) => [e.id, uid()]));
+  for (const b of template.boards) {
+    if (b.id === template.rootId) continue;
+    d.boards[boardIds.get(b.id)!] = { ...structuredClone(b), id: boardIds.get(b.id)!, parentId: boardIds.get(b.parentId ?? '') ?? targetId };
+  }
+  let z = maxZ(d);
+  for (const src of template.elements) {
+    const el = structuredClone(src);
+    el.id = elIds.get(src.id)!;
+    el.boardId = boardIds.get(src.boardId) ?? targetId;
+    if (el.boardId === targetId && !el.columnId) {
+      el.x += dx;
+      el.y += dy;
+      el.z = ++z;
+    }
+    if (el.columnId) el.columnId = elIds.get(el.columnId);
+    if (el.type === 'column') el.children = el.children.map((c) => elIds.get(c)!).filter(Boolean);
+    if (el.type === 'board') el.targetId = boardIds.get(el.targetId) ?? el.targetId;
+    if (el.type === 'todo') el.items = el.items.map((i) => ({ ...i, id: uid() }));
+    if (el.type === 'line') {
+      for (const end of [el.start, el.end]) if (end.elId) end.elId = elIds.get(end.elId);
+    }
+    d.elements[el.id] = el;
+  }
+}
+
+/** Starts a new project as a copy of a saved template, and opens it. */
+export function newProjectFromTemplate(templateId: string, folderId?: string) {
+  const template = getState().doc.templates?.find((t) => t.id === templateId);
+  if (template) newProject(folderId, template);
+}
+
+/** Adds a saved template's cards to the open board, centered on screen. */
+export function addTemplateToBoard(templateId: string) {
+  const { doc, ui } = getState();
+  const template = doc.templates?.find((t) => t.id === templateId);
+  if (!template) return;
+  const free = template.elements.filter((e) => e.boardId === template.rootId && !e.columnId && e.type !== 'line');
+  const c = viewportCenter();
+  const dx = free.length ? Math.round(c.x - (Math.min(...free.map((e) => e.x)) + Math.max(...free.map((e) => e.x + e.w))) / 2) : 0;
+  const dy = free.length ? Math.round(c.y - 220 - Math.min(...free.map((e) => e.y))) : 0;
+  mutate((d) => copyTemplate(d, template, ui.boardId, dx, dy));
+}
+
+export function renameTemplate(templateId: string, value: string) {
+  const name = value.trim() || 'Untitled template';
+  mutate((d) => {
+    const t = d.templates?.find((x) => x.id === templateId);
+    if (t && t.name !== name) t.name = name;
+  });
+}
+
+export function deleteTemplate(templateId: string) {
+  mutate((d) => {
+    d.templates = (d.templates ?? []).filter((t) => t.id !== templateId);
+  });
 }
 
 /** Files a project in a folder ('' for the top level). */

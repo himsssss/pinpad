@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Copy, Folder, FolderInput, FolderOpen, FolderPlus, Home, Pencil, Plus, Trash2,
+  ChevronLeft, ChevronRight, Copy, Folder, FolderInput, FolderOpen, FolderPlus, Home, LayoutTemplate, Pencil, Plus, Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import { browse, getState, openBoard, setUI } from '../store';
 import type { Renaming } from '../types';
 import {
-  createFolder, duplicateProject, fileBoard, folderChoices, folderContents, moveFolder, newProject, trashFolder, trashProject,
+  addTemplateToBoard, createFolder, deleteTemplate, duplicateProject, fileBoard, folderChoices, folderContents, moveFolder,
+  newProject, newProjectFromTemplate, saveAsTemplate, trashFolder, trashProject,
 } from '../projectActions';
 import { askConfirm } from './ConfirmDialog';
 
@@ -82,9 +83,38 @@ export function projectMenu(boardId: string, where: Renaming['where']): MenuItem
     { label: 'Open', icon: FolderOpen, onSelect: () => openBoard(boardId) },
     { label: 'Rename', icon: Pencil, onSelect: () => setUI({ renaming: { id: boardId, where } }) },
     { label: 'Duplicate', icon: Copy, onSelect: () => duplicateProject(boardId) },
+    { label: 'Save as template', icon: LayoutTemplate, onSelect: () => saveAsTemplate(boardId) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(board.folderId, undefined, (to) => fileBoard(boardId, to)) },
     'sep',
     { label: 'Delete project', icon: Trash2, danger: true, onSelect: () => confirmTrashProject(boardId) },
+  ];
+}
+
+/** Right-click menu for a saved template in the sidebar. */
+export function templateMenu(templateId: string): MenuItem[] {
+  const { doc, ui } = getState();
+  const template = doc.templates?.find((t) => t.id === templateId);
+  if (!template) return [];
+  const onBoard = ui.browsing === null;
+  return [
+    { label: 'New project from this', icon: Plus, onSelect: () => newProjectFromTemplate(templateId) },
+    ...(onBoard ? [{ label: 'Add to this board', icon: LayoutTemplate, onSelect: () => addTemplateToBoard(templateId) }] : []),
+    { label: 'Rename', icon: Pencil, onSelect: () => setUI({ renaming: { id: templateId, where: 'sidebar' } }) },
+    'sep',
+    {
+      label: 'Delete template',
+      icon: Trash2,
+      danger: true,
+      onSelect: async () => {
+        const ok = await askConfirm({
+          title: `Delete the “${template.name}” template?`,
+          message: 'Projects already made from it stay as they are.',
+          confirm: 'Delete',
+          danger: true,
+        });
+        if (ok) deleteTemplate(templateId);
+      },
+    },
   ];
 }
 

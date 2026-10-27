@@ -109,6 +109,19 @@ export interface Doc {
   folders: Record<string, Folder>;
   /** Deleted folders and projects, restorable for 30 days. */
   trash?: TrashEntry[];
+  /** Boards saved as templates, to start new projects from. */
+  templates?: SavedTemplate[];
+}
+
+/** A board (with the boards inside it) saved to reuse: new projects start as a copy. */
+export interface SavedTemplate {
+  id: string;
+  name: string;
+  createdAt: number;
+  /** The saved board; its cards are the template's content. */
+  rootId: string;
+  boards: Board[];
+  elements: El[];
 }
 
 /** A deleted folder (with everything in it) or project, kept so it can be put back. */

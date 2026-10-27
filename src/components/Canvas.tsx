@@ -8,6 +8,11 @@ import { readImage } from '../images';
 import { addStroke, eraseAt, strokePath } from '../drawing';
 import { CardFrame } from './CardFrame';
 import { TEMPLATES, applyTemplate } from '../templates';
+import { addTemplateToBoard } from '../projectActions';
+import { BoardIcon } from './BoardIcon';
+import type { SavedTemplate } from '../types';
+
+const NO_TEMPLATES: SavedTemplate[] = [];
 import { LinesLayer } from './LinesLayer';
 
 const clampZoom = (z: number) => Math.min(3, Math.max(0.2, z));
@@ -23,6 +28,7 @@ export function Canvas() {
   const [spaceDown, setSpaceDown] = useState(false);
   const draw = useStore((s) => s.ui.draw);
   const guides = useStore((s) => s.ui.guides);
+  const saved = useStore((s) => s.doc.templates ?? NO_TEMPLATES);
   const [liveStroke, setLiveStroke] = useState<number[] | null>(null);
 
   const isEmpty = useMemo(() => !Object.values(elements).some((e) => e.boardId === boardId), [elements, boardId]);
@@ -327,6 +333,15 @@ export function Canvas() {
                 <t.icon size={16} aria-hidden="true" /> {t.name}
               </button>
             ))}
+            {/* The user's own templates, saved from their boards. */}
+            {saved.map((t) => {
+              const look = t.boards.find((b) => b.id === t.rootId);
+              return (
+                <button key={t.id} className="template-chip saved" onClick={() => addTemplateToBoard(t.id)} title="Your template">
+                  <BoardIcon icon={look?.icon ?? 'layout'} color={look?.color ?? '#e6e6e6'} size={18} /> {t.name}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

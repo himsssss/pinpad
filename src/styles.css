@@ -952,3 +952,9 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
   .sidebar-expand { display: none; }
   .phone-only { display: grid; }
 }
+
+/* ---------- saved templates in the sidebar ---------- */
+
+.templates-section { margin-top: 0; padding-bottom: 12px; }
+.sidebar-heading button:disabled { opacity: 0.4; cursor: default; }
+.sidebar-heading button:disabled:hover { background: none; color: var(--stone); }

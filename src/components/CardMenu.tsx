@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter,
   AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter, ArrowDownToLine, ArrowUpToLine, Copy,
-  FolderOpen, Pencil, Trash2, type LucideIcon,
+  FolderOpen, LayoutTemplate, Pencil, Trash2, type LucideIcon,
 } from 'lucide-react';
+import { saveAsTemplate } from '../projectActions';
 import { worldRect } from '../interactions';
 import { getState, mutate, openBoard, startEditing } from '../store';
 import { deleteSelection, duplicateSelection } from '../actions';
@@ -144,6 +145,9 @@ export function CardMenu() {
         </button>
       )}
       <button role="menuitem" onClick={run(duplicateSelection)}><Copy size={14} /> Duplicate <kbd className="menu-kbd">{MOD}D</kbd></button>
+      {single?.type === 'board' && (
+        <button role="menuitem" onClick={run(() => saveAsTemplate(single.targetId))}><LayoutTemplate size={14} /> Save as template</button>
+      )}
       {placeable >= 2 && (
         <>
           <div className="menu-sep" />

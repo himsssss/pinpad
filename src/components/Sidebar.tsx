@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, LayoutTemplate, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
 import { browse, mutate, openBoard, setUI, usingDrive, useStore } from '../store';
 import { DriveIcon } from './DriveIcon';
@@ -7,9 +7,13 @@ import { boardPath, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD } from '../shortcuts';
 import {
-  BOARD_MIME, FOLDER_MIME, createFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject,
+  BOARD_MIME, FOLDER_MIME, createFolder, fileBoard, moveFolder, newProject, newProjectFromTemplate, renameFolder, renameProject,
+  renameTemplate, saveAsTemplate,
 } from '../projectActions';
-import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
+import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu, templateMenu } from './ContextMenu';
+import type { SavedTemplate } from '../types';
+
+const NO_TEMPLATES: SavedTemplate[] = [];
 import { TRASH } from './TrashPage';
 import { PlaceSwitcher } from './PlaceSwitcher';
 import { openStorageSettings } from './Header';
@@ -50,6 +54,7 @@ export function Sidebar() {
   // The list is named after where it's saved: the Drive folder or the folder on this computer.
   const storageName = useStore((s) => s.storageName);
   const trashCount = useStore((s) => s.doc.trash?.length ?? 0);
+  const templates = useStore((s) => s.doc.templates ?? NO_TEMPLATES);
 
   if (!open) return null;
 
@@ -238,6 +243,61 @@ export function Sidebar() {
           </>
         )}
       </div>
+      {/* Boards saved as templates: click one to start a new project as a copy of it. */}
+      <div className="sidebar-section templates-section">
+        <div className="sidebar-heading">
+          <span className="section-toggle">
+            <button
+              className="section-arrow"
+              aria-expanded={!isCollapsed('templates')}
+              aria-label={isCollapsed('templates') ? 'Expand templates' : 'Collapse templates'}
+              onClick={() => toggleSection('templates')}
+            >
+              {isCollapsed('templates') ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+            </button>
+            <button className="section-label" onClick={() => toggleSection('templates')}>
+              <LayoutTemplate size={12} />
+              <span className="section-name">Templates</span>
+            </button>
+            {isCollapsed('templates') && templates.length > 0 && <span className="section-count">{templates.length}</span>}
+          </span>
+          <button
+            aria-label="Save this board as a template"
+            title={browsing === null ? 'Save this board as a template' : 'Open a board to save it as a template'}
+            disabled={browsing !== null}
+            onClick={() => saveAsTemplate(boardId)}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+        {!isCollapsed('templates') &&
+          (templates.length ? (
+            templates.map((t) => {
+              const look = t.boards.find((b) => b.id === t.rootId);
+              const icon = <BoardIcon icon={look?.icon ?? 'layout'} color={look?.color ?? '#e6e6e6'} size={20} />;
+              return renaming === t.id ? (
+                <div key={t.id} className="project-row renaming">
+                  {icon}
+                  <RenameInput value={t.name} label="Template name" onCommit={(v) => renameTemplate(t.id, v)} />
+                </div>
+              ) : (
+                <button
+                  key={t.id}
+                  className="project-row"
+                  onClick={() => newProjectFromTemplate(t.id)}
+                  onContextMenu={(e) => openContextMenu(e, templateMenu(t.id))}
+                  title="New project from this template (right-click for more)"
+                >
+                  {icon}
+                  <span className="project-name">{t.name}</span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="sidebar-empty">Right-click a project and choose Save as template, or press + on a board.</p>
+          ))}
+      </div>
+
       <div className="sidebar-bottom">
         <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
           <span className="sidebar-icon"><Trash2 size={15} /></span>

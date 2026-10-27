@@ -30,6 +30,8 @@ export function parseWorkspace(text: string): Doc {
 export const INDEX_FILE = 'Pinpad Workspace.json';
 /** Deleted folders and projects (see TrashEntry), kept in one file beside the index. */
 export const TRASH_FILE = 'Pinpad Trash.json';
+/** Boards saved as templates (see SavedTemplate), also beside the index. */
+export const TEMPLATES_FILE = 'Pinpad Templates.json';
 const FORMAT = 2;
 
 interface Index {
@@ -99,6 +101,7 @@ function namer(): Take {
   };
   take('', 'Pinpad Workspace', '.json');
   take('', 'Pinpad Trash', '.json');
+  take('', 'Pinpad Templates', '.json');
   return take;
 }
 
@@ -165,6 +168,7 @@ export function layoutWorkspace(doc: Doc): Layout {
   }
   // Once the Trash has been used the file stays, so emptying it is saved too.
   if (doc.trash) files.set(TRASH_FILE, JSON.stringify(doc.trash));
+  if (doc.templates) files.set(TEMPLATES_FILE, JSON.stringify(doc.templates));
   const index: Index = { pinpad: FORMAT, rootId: doc.rootId, folders: doc.folders, boards: Object.fromEntries(paths) };
   files.set(INDEX_FILE, JSON.stringify(index, null, 2));
   return { files, paths };
@@ -212,7 +216,7 @@ export async function readWorkspace(
   };
 
   const indexed = Object.entries(index.boards);
-  const texts = await read([...indexed.map(([, path]) => path), TRASH_FILE]);
+  const texts = await read([...indexed.map(([, path]) => path), TRASH_FILE, TEMPLATES_FILE]);
   for (const [id, path] of indexed) {
     const text = texts[path];
     if (text != null) consider(path, text, id);
@@ -220,7 +224,7 @@ export async function readWorkspace(
   let missing = indexed.filter(([id]) => !found.has(id));
   if (missing.length && listing) {
     const tried = new Set(indexed.filter(([, path]) => texts[path] != null).map(([, path]) => path));
-    const others = listing.filter((f) => !f.dir && !f.pending && f.path !== INDEX_FILE && f.path !== TRASH_FILE && !tried.has(f.path)).map((f) => f.path);
+    const others = listing.filter((f) => !f.dir && !f.pending && f.path !== INDEX_FILE && f.path !== TRASH_FILE && f.path !== TEMPLATES_FILE && !tried.has(f.path)).map((f) => f.path);
     const more = others.length ? await read(others) : {};
     for (const path of others) {
       const text = more[path];
@@ -241,6 +245,12 @@ export async function readWorkspace(
   } catch {
     // An unreadable Trash file only loses what was in the Trash.
   }
+  try {
+    const templates = JSON.parse(texts[TEMPLATES_FILE] ?? '[]');
+    if (Array.isArray(templates) && texts[TEMPLATES_FILE] != null) doc.templates = templates;
+  } catch {
+    // An unreadable templates file only loses the saved templates.
+  }
   for (const [id, { file }] of found) {
     doc.boards[id] = { ...file.board, id };
     for (const el of file.elements) doc.elements[el.id] = { ...el, boardId: id };
@@ -250,6 +260,7 @@ export async function readWorkspace(
   const paths = new Map([...found].map(([id, f]) => [id, f.path]));
   const files = new Map([...found].map(([, f]) => [f.path, f.text]));
   if (texts[TRASH_FILE] != null) files.set(TRASH_FILE, texts[TRASH_FILE]!);
+  if (texts[TEMPLATES_FILE] != null) files.set(TEMPLATES_FILE, texts[TEMPLATES_FILE]!);
   if (listing) followRenames(doc, index, paths, listing);
   return { doc, files, paths };
 }
