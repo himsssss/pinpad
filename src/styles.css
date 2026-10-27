@@ -893,3 +893,4 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
   .list-head > :nth-child(2), .list-row > :nth-child(2) { display: none; }
   .projects-tools { flex-wrap: wrap; }
 }
+.crumb button.crumb-folder-link { display: inline-flex; align-items: center; gap: 5px; }

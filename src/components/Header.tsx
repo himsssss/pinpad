@@ -102,6 +102,9 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
 
   const isRoot = boardId === rootId;
   const parents = path.slice(0, -1);
+  // A board's path starts at its project's folder (Home stays out of it, as on the Projects page).
+  const projectFolders = [];
+  for (let f = path[1]?.folderId ? folders[path[1].folderId] : undefined; f; f = f.parentId ? folders[f.parentId] : undefined) projectFolders.unshift(f);
   const folderTrail = [];
   for (let f = browsing ? folders[browsing] : undefined; f; f = f.parentId ? folders[f.parentId] : undefined) folderTrail.unshift(f);
 
@@ -131,9 +134,17 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
           </nav>
         ) : (
           <nav className="breadcrumbs" aria-label="Board path">
-            {parents.map((b, i) => (
+            {projectFolders.map((f) => (
+              <span key={f.id} className="crumb">
+                <button className="crumb-folder-link" onClick={() => browse(f.id)}>
+                  <Folder size={14} aria-hidden="true" /> {f.name}
+                </button>
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              </span>
+            ))}
+            {parents.slice(1).map((b) => (
               <span key={b.id} className="crumb">
-                <button onClick={() => openBoard(b.id)}>{i === 0 ? 'Home' : b.title || 'Untitled'}</button>
+                <button onClick={() => openBoard(b.id)}>{b.title || 'Untitled'}</button>
                 <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
               </span>
             ))}
