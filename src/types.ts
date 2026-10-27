@@ -132,7 +132,7 @@ export interface UI {
   /** Link card whose media player is open; only one plays at a time. */
   playingId: string | null;
   sidebarOpen: boolean;
-  /** Sidebar sections ('folders', 'projects') the user has collapsed. */
+  /** Sidebar sections the user has collapsed ('folders' is the projects list). */
   collapsedSections: string[];
   /** Set while freehand drawing on the board. */
   draw: DrawMode | null;

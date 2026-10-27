@@ -246,29 +246,30 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="sidebar-section">
-        <div
-          className={`sidebar-heading ${isDropping('__top') ? 'drop-over' : ''}`}
-          {...dropZone('', { boards: false, folders: true }, '__top')}
-        >
-          {sectionToggle('folders', 'Folders', topFolders.length)}
+      {/* One list: folders first, then projects that aren't in a folder. Dropping a project
+          or folder anywhere outside a folder moves it to the top level. */}
+      <div
+        className={`sidebar-section ${isDropping('') ? 'drop-over' : ''}`}
+        {...dropZone('', { boards: true, folders: true })}
+      >
+        <div className="sidebar-heading">
+          {sectionToggle('folders', 'Projects', topFolders.length + unfiled.length)}
+          <button aria-label="New project" title="New project" onClick={() => newProject()}>
+            <Plus size={14} />
+          </button>
           <button aria-label="New folder" title="New folder" onClick={() => createFolder()}>
             <FolderPlus size={14} />
           </button>
         </div>
-        {!isCollapsed('folders') && topFolders.length === 0 && <p className="sidebar-empty">Create a folder to group your projects.</p>}
-        {!isCollapsed('folders') && topFolders.map(folderNode)}
-      </div>
-
-      <div className="sidebar-section">
-        <div className={`sidebar-heading ${isDropping('') ? 'drop-over' : ''}`} {...dropZone('', { boards: true, folders: false })}>
-          {sectionToggle('projects', 'Projects', unfiled.length)}
-          <button aria-label="New project" title="New project" onClick={() => newProject()}>
-            <Plus size={14} />
-          </button>
-        </div>
-        {!isCollapsed('projects') && unfiled.map(projectRow)}
-        {!isCollapsed('projects') && unfiled.length === 0 && <p className="sidebar-empty">Every project is in a folder.</p>}
+        {!isCollapsed('folders') && (
+          <>
+            {topFolders.map(folderNode)}
+            {unfiled.map(projectRow)}
+            {topFolders.length === 0 && unfiled.length === 0 && (
+              <p className="sidebar-empty">Create a project, or a folder to group them.</p>
+            )}
+          </>
+        )}
       </div>
     </nav>
   );

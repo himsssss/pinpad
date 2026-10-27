@@ -180,7 +180,7 @@ input { font: inherit; color: inherit; }
 .sidebar-top .project-row { flex: 1; }
 .sidebar-collapse { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-md); color: var(--stone); }
 .sidebar-collapse:hover { background: var(--surface); color: var(--ink); }
-.sidebar-section { margin-top: 12px; }
+.sidebar-section { margin-top: 12px; padding-bottom: 24px; border-radius: var(--r-md); }
 .sidebar-heading {
   display: flex;
   align-items: center;
@@ -195,6 +195,7 @@ input { font: inherit; color: inherit; }
 }
 .sidebar-heading button, .row-actions button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--stone); }
 .sidebar-heading button:hover, .row-actions button:hover { background: var(--surface); color: var(--ink); }
+.sidebar-heading .section-toggle { margin-right: auto; }
 .sidebar-heading .section-toggle {
   width: auto;
   height: auto;
@@ -243,7 +244,7 @@ input { font: inherit; color: inherit; }
 .folder-row:hover .row-actions { display: flex; }
 .folder-row:hover .folder-count { display: none; }
 .folder-items { padding-left: 20px; }
-.folder-row.drop-over, .sidebar-heading.drop-over { background: var(--blue-tint); box-shadow: inset 0 0 0 1.5px var(--blue); }
+.folder-row.drop-over, .sidebar-section.drop-over { background: var(--blue-tint); box-shadow: inset 0 0 0 1.5px var(--blue); }
 
 /* ---------- tool rail (floating panel, icon-only like Miro) ---------- */
 
