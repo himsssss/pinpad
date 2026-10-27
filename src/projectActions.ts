@@ -26,20 +26,17 @@ const homeCard = (doc: Doc, boardId: string) =>
   Object.values(doc.elements).find((e) => e.type === 'board' && e.boardId === doc.rootId && e.targetId === boardId);
 
 /** Adds a board to Home (right of everything already there), files it, and opens it. */
-export function newProject(folderId?: string, template?: SavedTemplate) {
+export function newProject(folderId?: string) {
   const { doc } = getState();
   const onHome = Object.values(doc.elements).filter((e) => e.boardId === doc.rootId && !e.columnId && e.type !== 'line');
   const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
   const { el, board } = createElement('board', doc.rootId, x, 80, maxZ(doc) + 1);
   if (!board) return;
-  const look = template?.boards.find((b) => b.id === template.rootId);
-  board.title = template ? template.name : 'Untitled project';
-  if (look) Object.assign(board, { color: look.color, icon: look.icon });
+  board.title = 'Untitled project';
   board.folderId = folderId;
   mutate((d) => {
     d.elements[el.id] = el;
     d.boards[board.id] = board;
-    if (template) copyTemplate(d, template, board.id, 0, 0);
   });
   openBoard(board.id);
   // Let the user name it straight away in the board title field.
@@ -63,7 +60,7 @@ function boardTree(doc: Doc, rootId: string) {
   return ids;
 }
 
-/** Saves a board (with the boards inside it) as a template, and starts renaming it in the sidebar. */
+/** Saves a board (with the boards inside it) as a template, named after the board. */
 export function saveAsTemplate(boardId: string) {
   const { doc } = getState();
   const board = doc.boards[boardId];
@@ -85,7 +82,6 @@ export function saveAsTemplate(boardId: string) {
   mutate((d) => {
     d.templates = [template, ...(d.templates ?? [])];
   });
-  setUI((u) => ({ renaming: { id: template.id, where: 'sidebar' }, collapsedSections: u.collapsedSections.filter((s) => s !== 'templates') }));
   return template.id;
 }
 
@@ -123,12 +119,6 @@ function copyTemplate(d: Doc, template: SavedTemplate, targetId: string, dx: num
   }
 }
 
-/** Starts a new project as a copy of a saved template, and opens it. */
-export function newProjectFromTemplate(templateId: string, folderId?: string) {
-  const template = getState().doc.templates?.find((t) => t.id === templateId);
-  if (template) newProject(folderId, template);
-}
-
 /** Adds a saved template's cards to the open board, centered on screen. */
 export function addTemplateToBoard(templateId: string) {
   const { doc, ui } = getState();
@@ -139,14 +129,6 @@ export function addTemplateToBoard(templateId: string) {
   const dx = free.length ? Math.round(c.x - (Math.min(...free.map((e) => e.x)) + Math.max(...free.map((e) => e.x + e.w))) / 2) : 0;
   const dy = free.length ? Math.round(c.y - 220 - Math.min(...free.map((e) => e.y))) : 0;
   mutate((d) => copyTemplate(d, template, ui.boardId, dx, dy));
-}
-
-export function renameTemplate(templateId: string, value: string) {
-  const name = value.trim() || 'Untitled template';
-  mutate((d) => {
-    const t = d.templates?.find((x) => x.id === templateId);
-    if (t && t.name !== name) t.name = name;
-  });
 }
 
 export function deleteTemplate(templateId: string) {

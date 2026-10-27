@@ -954,6 +954,32 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 
 /* ---------- saved templates in the sidebar ---------- */
 
-.templates-section { margin-top: 0; padding-bottom: 12px; }
 .sidebar-heading button:disabled { opacity: 0.4; cursor: default; }
 .sidebar-heading button:disabled:hover { background: none; color: var(--stone); }
+
+/* ---------- template choices: remove, create, bring back ---------- */
+
+.template-chip-wrap { position: relative; display: inline-flex; }
+.template-chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  display: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--steel);
+  box-shadow: var(--shadow-2);
+}
+.template-chip-wrap:hover .template-chip-remove, .template-chip-remove:focus-visible { display: grid; }
+.template-chip-remove:hover { background: var(--danger); color: var(--on-dark); }
+@media (hover: none) { .template-chip-remove { display: grid; } }
+.template-chip.create { background: transparent; box-shadow: inset 0 0 0 1.5px var(--hairline-strong); color: var(--slate); }
+.template-chip.create:hover { background: var(--panel); box-shadow: var(--shadow-3); transform: translateY(-1px); }
+.templates-restore { width: 100%; font-size: 13px; color: var(--blue); }
+.templates-restore:hover { text-decoration: underline; }
+.template-source-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin-top: 4px; }
+.template-source-list .project-row { font-size: 14px; }
+.template-source-hint { margin-left: auto; color: var(--stone); }
