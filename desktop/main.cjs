@@ -239,18 +239,20 @@ async function storage(event, op, arg) {
  * later launches get access tokens without asking again. Mirrors GoogleAuth in macos/main.swift.
  */
 const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-const googleTokenPath = () => path.join(app.getPath('userData'), 'google-token.bin');
+/** One encrypted file per Google account; google-token.bin is the older single sign-in. */
+const googleTokenPath = (account) =>
+  path.join(app.getPath('userData'), account ? `google-token-${crypto.createHash('sha256').update(account).digest('hex').slice(0, 16)}.bin` : 'google-token.bin');
 const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 let pendingSignIn = null;
 
-async function saveRefreshToken(token) {
+async function saveRefreshToken(token, account) {
   const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(token) : Buffer.from(token);
-  await fs.writeFile(googleTokenPath(), data);
+  await fs.writeFile(googleTokenPath(account), data);
 }
 
-async function loadRefreshToken() {
+async function loadRefreshToken(account) {
   try {
-    const data = await fs.readFile(googleTokenPath());
+    const data = await fs.readFile(googleTokenPath(account));
     return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(data) : data.toString();
   } catch {
     return null;
@@ -303,9 +305,14 @@ async function googleSignIn({ clientId, clientSecret }) {
     const tokens = await googleTokenRequest({
       grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code_verifier: verifier,
     });
-    if (tokens.refresh_token) await saveRefreshToken(tokens.refresh_token);
+    // Which account signed in decides where its sign-in is kept.
+    const about = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    }).then((r) => r.json()).catch(() => ({}));
+    const account = about.user?.emailAddress ?? null;
+    if (tokens.refresh_token) await saveRefreshToken(tokens.refresh_token, account);
     BrowserWindow.getAllWindows()[0]?.focus();
-    return { accessToken: tokens.access_token, expiresIn: tokens.expires_in };
+    return { accessToken: tokens.access_token, expiresIn: tokens.expires_in, account };
   } finally {
     pendingSignIn = null;
     server.close();
@@ -317,7 +324,16 @@ async function google(_event, op, arg) {
     case 'signIn':
       return googleSignIn(arg);
     case 'token': {
-      const refresh = await loadRefreshToken();
+      const account = arg.account ?? null;
+      let refresh = await loadRefreshToken(account);
+      // A sign-in saved before accounts were kept apart moves to the first account that asks.
+      if (!refresh && account) {
+        refresh = await loadRefreshToken(null);
+        if (refresh) {
+          await saveRefreshToken(refresh, account);
+          await fs.rm(googleTokenPath(null), { force: true });
+        }
+      }
       if (!refresh) return null;
       try {
         const tokens = await googleTokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: arg.clientId, client_secret: arg.clientSecret });
@@ -325,15 +341,17 @@ async function google(_event, op, arg) {
       } catch (err) {
         // A revoked or expired grant means signing in again; anything else (offline) is retried later.
         if (err.code === 'invalid_grant') {
-          await fs.rm(googleTokenPath(), { force: true });
+          await fs.rm(googleTokenPath(account), { force: true });
           return null;
         }
         throw err;
       }
     }
     case 'signOut': {
-      const refresh = await loadRefreshToken();
-      await fs.rm(googleTokenPath(), { force: true });
+      const account = arg?.account ?? null;
+      const refresh = (await loadRefreshToken(account)) ?? (await loadRefreshToken(null));
+      await fs.rm(googleTokenPath(account), { force: true });
+      await fs.rm(googleTokenPath(null), { force: true });
       if (refresh) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refresh)}`, { method: 'POST' }).catch(() => {});
       return true;
     }

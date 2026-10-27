@@ -285,6 +285,17 @@ export function looksLikeUrl(s: string) {
   return /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(s.trim());
 }
 
+/** A workspace with nothing in it yet: just Home. */
+export function blankDoc(): Doc {
+  const rootId = uid();
+  return {
+    rootId,
+    boards: { [rootId]: { id: rootId, title: 'Home', parentId: null, color: '#ffd02f', icon: 'layout' } },
+    elements: {},
+    folders: {},
+  };
+}
+
 export function seedDoc(): Doc {
   const rootId = uid();
   const doc: Doc = {

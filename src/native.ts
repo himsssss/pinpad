@@ -54,6 +54,8 @@ export interface NativeStorage {
 export interface GoogleClient {
   clientId: string;
   clientSecret: string;
+  /** Which connected account's saved sign-in to use. */
+  account?: string;
 }
 
 export interface GoogleToken {
@@ -64,10 +66,11 @@ export interface GoogleToken {
 
 /** Google sign-in through the system browser; the refresh token stays in the native shell. */
 export interface NativeGoogle {
-  signIn(client: GoogleClient): Promise<GoogleToken>;
+  /** Also tells which account signed in (its sign-in is saved under that account). */
+  signIn(client: GoogleClient): Promise<GoogleToken & { account?: string | null }>;
   /** A fresh access token from the saved sign-in, or null when the user has to sign in again. */
   token(client: GoogleClient): Promise<GoogleToken | null>;
-  signOut(): Promise<boolean>;
+  signOut(options?: { account?: string }): Promise<boolean>;
 }
 
 declare global {

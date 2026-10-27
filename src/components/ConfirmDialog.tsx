@@ -5,16 +5,26 @@ interface Ask {
   title: string;
   message: string;
   confirm: string;
+  /** A second choice besides confirming, shown between Cancel and the confirm button. */
+  alternative?: string;
   /** Red confirm button, for deleting. */
   danger?: boolean;
-  resolve: (ok: boolean) => void;
+  resolve: (answer: boolean | 'alternative') => void;
 }
 
 let show: ((ask: Ask) => void) | null = null;
 
 /** Shows a warning and resolves true if the user confirms. */
-export function askConfirm(options: Omit<Ask, 'resolve'>): Promise<boolean> {
-  return new Promise((resolve) => (show ? show({ ...options, resolve }) : resolve(confirm(`${options.title}\n\n${options.message}`))));
+export function askConfirm(options: Omit<Ask, 'resolve' | 'alternative'>): Promise<boolean> {
+  return new Promise((resolve) => (show ? show({ ...options, resolve: (a) => resolve(a === true) }) : resolve(confirm(`${options.title}\n\n${options.message}`))));
+}
+
+/** Like askConfirm, with a second choice: resolves 'confirm', 'alternative', or null when cancelled. */
+export function askChoice(options: Omit<Ask, 'resolve'> & { alternative: string }): Promise<'confirm' | 'alternative' | null> {
+  return new Promise((resolve) => {
+    if (!show) return resolve(null);
+    show({ ...options, resolve: (a) => resolve(a === true ? 'confirm' : a === 'alternative' ? 'alternative' : null) });
+  });
 }
 
 export function ConfirmDialog() {
@@ -26,7 +36,7 @@ export function ConfirmDialog() {
     return () => { show = null; };
   }, []);
 
-  const answer = (ok: boolean) => {
+  const answer = (ok: boolean | 'alternative') => {
     ask?.resolve(ok);
     setAsk(null);
   };
@@ -53,6 +63,7 @@ export function ConfirmDialog() {
         <p id="confirm-text" className="dialog-text">{ask.message}</p>
         <div className="dialog-actions">
           <button className="btn-secondary" onClick={() => answer(false)}>Cancel</button>
+          {ask.alternative && <button className="btn-secondary" onClick={() => answer('alternative')}>{ask.alternative}</button>}
           <button ref={confirmRef} className={`btn-primary ${ask.danger ? 'danger' : ''}`} onClick={() => answer(true)}>{ask.confirm}</button>
         </div>
       </div>

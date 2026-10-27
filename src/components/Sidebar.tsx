@@ -11,6 +11,8 @@ import {
 } from '../projectActions';
 import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
 import { TRASH } from './TrashPage';
+import { PlaceSwitcher } from './PlaceSwitcher';
+import { openStorageSettings } from './Header';
 
 /** Inline name editor for a folder or project, committed on Enter or blur. */
 export function RenameInput({ value, label, onCommit }: { value: string; label: string; onCommit: (value: string) => void }) {
@@ -206,6 +208,10 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar" aria-label="Folders and projects">
+      {/* The logo opens the list of places boards are kept in (each Google Drive, folders, this browser). */}
+      <div className="sidebar-brand">
+        <PlaceSwitcher onSettings={openStorageSettings} />
+      </div>
       {/* One list: folders first, then projects that aren't in a folder. Dropping a project
           or folder anywhere outside a folder moves it to the top level. */}
       <div
@@ -221,10 +227,6 @@ export function Sidebar() {
           <button aria-label="New folder" title="New folder" onClick={() => createFolder()}>
             <FolderPlus size={14} />
           </button>
-          {/* Home is reached from the logo (Projects page) and the breadcrumbs. */}
-          <button aria-label="Collapse sidebar" title={`Collapse sidebar (${MOD}\\)`} onClick={() => setUI({ sidebarOpen: false })}>
-            <ChevronsLeft size={14} />
-          </button>
         </div>
         {!isCollapsed('folders') && (
           <>
@@ -236,11 +238,16 @@ export function Sidebar() {
           </>
         )}
       </div>
-      <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
-        <span className="sidebar-icon"><Trash2 size={15} /></span>
-        <span className="project-name">Trash</span>
-        {trashCount > 0 && <span className="folder-count">{trashCount}</span>}
-      </button>
+      <div className="sidebar-bottom">
+        <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
+          <span className="sidebar-icon"><Trash2 size={15} /></span>
+          <span className="project-name">Trash</span>
+          {trashCount > 0 && <span className="folder-count">{trashCount}</span>}
+        </button>
+        <button className="sidebar-collapse" aria-label="Collapse sidebar" title={`Collapse sidebar (${MOD}\\)`} onClick={() => setUI({ sidebarOpen: false })}>
+          <ChevronsLeft size={15} />
+        </button>
+      </div>
     </nav>
   );
 }

@@ -16,6 +16,6 @@ contextBridge.exposeInMainWorld('pinpadNative', {
   google: {
     signIn: (config) => ipcRenderer.invoke('pinpad:google', 'signIn', config),
     token: (config) => ipcRenderer.invoke('pinpad:google', 'token', config),
-    signOut: () => ipcRenderer.invoke('pinpad:google', 'signOut'),
+    signOut: (config) => ipcRenderer.invoke('pinpad:google', 'signOut', config ?? null),
   },
 });

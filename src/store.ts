@@ -2,11 +2,11 @@ import { useSyncExternalStore } from 'react';
 import { produce, type Draft } from 'immer';
 import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
-import { deleteElements, seedDoc } from './doc';
+import { blankDoc, deleteElements, seedDoc } from './doc';
 import { purgeOldTrash } from './projectActions';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
-import { preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
+import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
 export interface State {
@@ -221,6 +221,13 @@ function setUsingDrive(on: boolean) {
     // Without storage the choice lasts for this session only.
   }
 }
+/**
+ * This device's copy of the open workspace (IndexedDB) is kept per Google account, so
+ * switching accounts never shows one account's boards in another's place. Browser-only
+ * storage and the desktop apps' folders keep the original key.
+ */
+const docKey = () => (usingDrive() ? `doc:drive:${googleAccount() ?? ''}` : 'doc');
+
 const currentBackend = (): Backend | undefined => (usingDrive() ? driveStorage : nativeStorage());
 const placeName = () => (usingDrive() ? 'Google Drive' : 'your storage folder');
 
@@ -382,7 +389,7 @@ const LOCAL_ERROR = "Couldn't save in this browser";
 /** Saves to this device; without a storage folder or Drive, a failure here means unsaved work, so it's shown. */
 async function saveLocal(doc: Doc) {
   try {
-    await save('doc', doc);
+    await save(docKey(), doc);
     if (state.storageError?.startsWith(LOCAL_ERROR)) setState({ storageError: null });
   } catch (err) {
     if (backend) return;
@@ -413,7 +420,7 @@ export async function flushNow() {
  * that workspace's board files to the Trash and saves the current boards there. The old
  * place is left alone either way.
  */
-export async function switchStorage(target: StorageTarget, keep: 'open' | 'replace') {
+export async function switchStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fresh') {
   try {
     await moveStorage(target, keep);
   } finally {
@@ -429,7 +436,22 @@ async function refreshStorageName() {
   if (name !== state.storageName) setState({ storageName: name });
 }
 
-async function moveStorage(target: StorageTarget, keep: 'open' | 'replace') {
+/** Shows another workspace, with a clean undo history. */
+function showDoc(doc: Doc) {
+  past = [];
+  future = [];
+  pendingBase = null;
+  const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
+  setState({
+    doc,
+    ui: { ...state.ui, boardId, selection: [], editingId: null, playingId: null, dropTarget: null, browsing: state.ui.browsing === null ? null : '' },
+    canUndo: false,
+    canRedo: false,
+    storageError: null,
+  });
+}
+
+async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fresh') {
   await flushNow();
   const native = nativeStorage();
   const wasDrive = usingDrive();
@@ -440,9 +462,19 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace') {
   backend = currentBackend();
   fileBlocked = false;
   if (!backend) {
-    // The website without Drive: the boards stay in this browser's storage.
+    // The website without Drive: the boards kept in this browser (or a new, empty workspace).
     onDisk = nothingOnDisk();
+    if (keep !== 'replace') showDoc((keep === 'open' && (await load<Doc>('doc').catch(() => undefined))) || blankDoc());
     setState({ storageError: null });
+    await saveLocal(state.doc);
+    return;
+  }
+  if (keep === 'fresh') {
+    // A new place starts empty; anything already there is left alone.
+    onDisk = nothingOnDisk();
+    showDoc(blankDoc());
+    await saveLocal(state.doc);
+    await writeFiles(state.doc);
     return;
   }
   if (keep === 'replace') {
@@ -494,7 +526,8 @@ function schedulePersist() {
 }
 
 export async function initStore() {
-  let doc = await load<Doc>('doc').catch(() => undefined);
+  // This place's own copy; before copies were kept per account, there was one shared copy.
+  let doc = (await load<Doc>(docKey()).catch(() => undefined)) ?? (await load<Doc>('doc').catch(() => undefined));
   let storageError: string | null = null;
   backend = currentBackend();
   if (backend) {

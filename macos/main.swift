@@ -387,7 +387,7 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
       window.pinpadNative = Object.assign(window.pinpadNative || {}, { google: {
         signIn: (config) => call('signIn', config),
         token: (config) => call('token', config),
-        signOut: () => call('signOut'),
+        signOut: (config) => call('signOut', config),
       } });
     })();
     """
@@ -417,32 +417,42 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     let config = body["config"] as? [String: Any] ?? [:]
     let clientId = config["clientId"] as? String ?? ""
     let secret = config["clientSecret"] as? String ?? ""
+    // Each Google account keeps its own sign-in; a sign-in saved before accounts were kept
+    // apart is used for (and moved to) the first account that asks for it.
+    let account = config["account"] as? String
     switch op {
     case "signIn":
       signIn(clientId: clientId, secret: secret, reply: replyHandler)
     case "token":
-      guard let refresh = Self.loadRefreshToken() else { return replyHandler(NSNull(), nil) }
+      var refresh = Self.loadRefreshToken(account: account)
+      if refresh == nil, let account, let legacy = Self.loadRefreshToken(account: nil) {
+        Self.saveRefreshToken(legacy, account: account)
+        Self.deleteRefreshToken(account: nil)
+        refresh = legacy
+      }
+      guard let refresh else { return replyHandler(NSNull(), nil) }
       Self.tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientId, "client_secret": secret]) { result in
         switch result {
         case .success(let json):
           replyHandler(Self.tokenReply(json), nil)
         case .failure(let error as AuthError) where error.code == "invalid_grant":
           // Revoked or expired: the user signs in again. Other failures (offline) are retried later.
-          Self.deleteRefreshToken()
+          Self.deleteRefreshToken(account: account)
           replyHandler(NSNull(), nil)
         case .failure(let error):
           replyHandler(nil, error.localizedDescription)
         }
       }
     case "signOut":
-      if let refresh = Self.loadRefreshToken(),
+      if let refresh = Self.loadRefreshToken(account: account) ?? Self.loadRefreshToken(account: nil),
         let url = URL(string: "https://oauth2.googleapis.com/revoke?token=\(Self.formEncode(refresh))")
       {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         URLSession.shared.dataTask(with: request).resume()
       }
-      Self.deleteRefreshToken()
+      Self.deleteRefreshToken(account: account)
+      Self.deleteRefreshToken(account: nil)
       replyHandler(true, nil)
     default:
       replyHandler(nil, "Unknown Google request \(op)")
@@ -479,9 +489,15 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
         ]) { result in
           switch result {
           case .success(let json):
-            if let refresh = json["refresh_token"] as? String { Self.saveRefreshToken(refresh) }
             NSApp.activate(ignoringOtherApps: true)
-            reply(Self.tokenReply(json), nil)
+            let access = json["access_token"] as? String ?? ""
+            // Which account signed in decides where its sign-in is kept.
+            Self.fetchEmail(accessToken: access) { email in
+              if let refresh = json["refresh_token"] as? String { Self.saveRefreshToken(refresh, account: email) }
+              var out = Self.tokenReply(json)
+              out["account"] = email ?? NSNull()
+              reply(out, nil)
+            }
           case .failure(let error):
             reply(nil, error.localizedDescription)
           }
@@ -566,6 +582,18 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     }.resume()
   }
 
+  /// The signed-in account's email, from Google Drive.
+  nonisolated private static func fetchEmail(accessToken: String, done: @escaping @Sendable (String?) -> Void) {
+    guard let url = URL(string: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)") else { return done(nil) }
+    var request = URLRequest(url: url, timeoutInterval: 15)
+    request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+    URLSession.shared.dataTask(with: request) { data, _, _ in
+      let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+      let email = (json?["user"] as? [String: Any])?["emailAddress"] as? String
+      DispatchQueue.main.async { done(email) }
+    }.resume()
+  }
+
   nonisolated private static func tokenReply(_ json: [String: Any]) -> [String: Any] {
     ["accessToken": json["access_token"] ?? NSNull(), "expiresIn": json["expires_in"] ?? 3600]
   }
@@ -587,19 +615,23 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     return base64url(Data(bytes))
   }
 
-  nonisolated private static var keychainItem: [String: Any] {
-    [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService, kSecAttrAccount as String: "refresh-token"]
+  /// One Keychain item per Google account ("refresh-token" alone is the older single sign-in).
+  nonisolated private static func keychainItem(account: String?) -> [String: Any] {
+    [
+      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService,
+      kSecAttrAccount as String: account.map { "refresh-token:\($0)" } ?? "refresh-token",
+    ]
   }
 
-  nonisolated private static func saveRefreshToken(_ token: String) {
-    SecItemDelete(keychainItem as CFDictionary)
-    var item = keychainItem
+  nonisolated private static func saveRefreshToken(_ token: String, account: String?) {
+    SecItemDelete(keychainItem(account: account) as CFDictionary)
+    var item = keychainItem(account: account)
     item[kSecValueData as String] = Data(token.utf8)
     SecItemAdd(item as CFDictionary, nil)
   }
 
-  nonisolated private static func loadRefreshToken() -> String? {
-    var query = keychainItem
+  nonisolated private static func loadRefreshToken(account: String?) -> String? {
+    var query = keychainItem(account: account)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
@@ -607,8 +639,8 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     return String(data: data, encoding: .utf8)
   }
 
-  nonisolated private static func deleteRefreshToken() {
-    SecItemDelete(keychainItem as CFDictionary)
+  nonisolated private static func deleteRefreshToken(account: String?) {
+    SecItemDelete(keychainItem(account: account) as CFDictionary)
   }
 }
 
