@@ -8,6 +8,7 @@ import { cacheAll, moveAttachment, settlePending, storeAttachment, trashAttachme
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
+import { allowWebFolder, currentWebFolder, FolderAccessNeeded, setCurrentWebFolder, webFolderStorage, webFoldersSupported } from './webFolderStorage';
 import { microsoftAccount } from './microsoftAuth';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
@@ -210,10 +211,18 @@ type Backend = Pick<NativeStorage, 'read' | 'list'> & {
   /** Google Drive reports each file done; the desktop apps write a batch in one go. */
   write(batch: StorageBatch, onProgress?: (done: number) => void): Promise<boolean>;
 };
-export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'onedrive' } | { kind: 'browser' };
+export type StorageTarget =
+  | { kind: 'folder'; folder: string | null }
+  | { kind: 'webfolder'; id: string; name: string }
+  | { kind: 'drive' }
+  | { kind: 'onedrive' }
+  | { kind: 'browser' };
 type Cloud = 'drive' | 'onedrive';
 
-/** Per device: whether this computer or browser keeps its boards in Google Drive or OneDrive. */
+/**
+ * Per device: whether this computer or browser keeps its boards in Google Drive or OneDrive,
+ * or (website) in a folder on this computer the user picked ("folder").
+ */
 const MODE_KEY = 'pinpad:storage';
 export function cloudInUse(): Cloud | null {
   try {
@@ -225,9 +234,16 @@ export function cloudInUse(): Cloud | null {
 }
 export const usingDrive = () => cloudInUse() === 'drive';
 export const usingOneDrive = () => cloudInUse() === 'onedrive';
-function setCloud(cloud: Cloud | null) {
+export function usingWebFolder() {
   try {
-    if (cloud) localStorage.setItem(MODE_KEY, cloud);
+    return webFoldersSupported() && localStorage.getItem(MODE_KEY) === 'folder' && !!currentWebFolder();
+  } catch {
+    return false;
+  }
+}
+function setMode(mode: Cloud | 'folder' | null) {
+  try {
+    if (mode) localStorage.setItem(MODE_KEY, mode);
     else localStorage.removeItem(MODE_KEY);
   } catch {
     // Without storage the choice lasts for this session only.
@@ -244,15 +260,18 @@ const docKey = () => {
   const cloud = cloudInUse();
   if (cloud === 'drive') return `doc:drive:${googleAccount() ?? ''}`;
   if (cloud === 'onedrive') return `doc:onedrive:${microsoftAccount() ?? ''}`;
+  if (usingWebFolder()) return `doc:folder:${currentWebFolder()!.id}`;
   return 'doc';
 };
 
 const currentBackend = (): Backend | undefined => {
   const cloud = cloudInUse();
-  return cloud ? cloudStorage(cloud) : nativeStorage();
+  if (cloud) return cloudStorage(cloud);
+  return usingWebFolder() ? webFolderStorage : nativeStorage();
 };
 const placeName = () => {
   const cloud = cloudInUse();
+  if (usingWebFolder()) return `the “${currentWebFolder()!.name}” folder`;
   return cloud === 'drive' ? 'Google Drive' : cloud === 'onedrive' ? 'OneDrive' : 'your storage folder';
 };
 
@@ -401,6 +420,15 @@ function writeFiles(doc: Doc) {
  */
 export async function afterSignIn() {
   if (!fileBlocked) return retrySave();
+  if (backend === webFolderStorage) {
+    // Read the folder as on opening: edits made meanwhile stay unless it changed elsewhere.
+    webFolderStorage.reset();
+    fileBlocked = false;
+    starting = blockedDoc ?? state.doc;
+    setState({ storageError: null });
+    startup = finishStart(backend);
+    return startup;
+  }
   const cloud = cloudInUse() ?? 'drive';
   const storage = cloudStorage(cloud);
   storage.reset();
@@ -560,6 +588,7 @@ async function refreshStorageName() {
   let name: string | null = null;
   if (backend === driveStorage) name = driveStorage.folderName() ?? 'Google Drive';
   else if (backend === oneDriveStorage) name = 'OneDrive';
+  else if (backend === webFolderStorage) name = webFolderStorage.folderName();
   else if (backend) name = (await nativeStorage()!.location()).folder.split(/[\\/]/).filter(Boolean).pop() ?? null;
   if (name !== state.storageName) setState({ storageName: name });
 }
@@ -590,12 +619,14 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   // Boards copied to the new place bring their attached files: get them here first.
   if (keep === 'replace') await cacheAll(state.doc);
   const native = nativeStorage();
-  const wasCloud = cloudInUse();
+  const wasMode = cloudInUse() ?? (usingWebFolder() ? 'folder' : null);
+  const wasFolder = currentWebFolder();
   const previous = target.kind === 'folder' && native ? await native.location() : null;
   if (target.kind === 'folder') await native?.use(target.folder);
   const cloud = target.kind === 'drive' || target.kind === 'onedrive' ? target.kind : null;
   if (cloud) cloudStorage(cloud).reset();
-  setCloud(cloud);
+  if (target.kind === 'webfolder') setCurrentWebFolder(target);
+  setMode(cloud ?? (target.kind === 'webfolder' ? 'folder' : null));
   backend = currentBackend();
   fileBlocked = false;
   if (!backend) {
@@ -638,7 +669,8 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     if (!found) throw new Error(cloud ? `No Pinpad workspace in ${placeName()}` : 'No Pinpad workspace in that folder');
   } catch (err) {
     if (previous && native) await native.use(previous.isDefault ? null : previous.folder);
-    setCloud(wasCloud);
+    setMode(wasMode);
+    setCurrentWebFolder(wasFolder);
     backend = currentBackend();
     throw err;
   }
@@ -670,7 +702,7 @@ export async function initStore() {
   let storageError: string | null = null;
   backend = currentBackend();
   // Google Drive is a network away: open with this device's copy of it, and read Drive after.
-  const quick = (backend === driveStorage || backend === oneDriveStorage) && !!own?.boards?.[own.rootId];
+  const quick = (backend === driveStorage || backend === oneDriveStorage || backend === webFolderStorage) && !!own?.boards?.[own.rootId];
   if (backend && !quick) {
     // The saved files win; IndexedDB is the fallback and, the first time files are used, the
     // boards that get written out.
@@ -699,6 +731,16 @@ export async function initStore() {
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushPending() : syncFromStorage()));
   window.addEventListener('focus', () => syncFromStorage());
+  if (usingWebFolder()) {
+    // The browser may want the folder allowed again after a restart, which needs a click: the
+    // first click asks, and saving carries on.
+    const askOnClick = () => {
+      if (!(state.storageError && fileBlocked)) return;
+      window.removeEventListener('pointerdown', askOnClick, true);
+      allowWebFolder(currentWebFolder()!.id, true).then((ok) => ok && afterSignIn()).catch(() => {});
+    };
+    window.addEventListener('pointerdown', askOnClick, true);
+  }
   if (usingDrive() && !nativeStorage()) {
     // The website's Google token lasts an hour and renewing it needs a click, so the next
     // click after it runs low renews it, instead of saving stopping until "Sign in again".
@@ -757,6 +799,7 @@ export async function initStore() {
 }
 
 function openError(err: unknown) {
+  if (err instanceof FolderAccessNeeded) return `${err.message} Click anywhere to allow it; until then you're seeing the copy saved in this browser.`;
   const reason = err instanceof SignInNeeded ? 'you need to sign in again' : errorText(err);
   return `Couldn't open your boards in ${placeName()} (${reason}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until you open Storage location and fix this.`;
 }

@@ -5,10 +5,11 @@ import { browse, useStore } from '../store';
 import { nativeStorage } from '../native';
 import { googleAllowedHere, googleConfigured } from '../googleAuth';
 import { microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
-import { addFolder, addGoogleDrive, addOneDrive, describePlace, listPlaces, openPlace, removePlace, type NewPlaceChoice, type Place } from '../places';
+import { addFolder, addGoogleDrive, addOneDrive, addWebFolder, describePlace, listPlaces, openPlace, removePlace, type NewPlaceChoice, type Place } from '../places';
 import { askChoice, askConfirm } from './ConfirmDialog';
 import { DriveIcon } from './DriveIcon';
 import { OneDriveIcon } from './OneDriveIcon';
+import { webFoldersSupported } from '../webFolderStorage';
 import { PinpadMark } from './PinpadMark';
 
 /** A place with no Pinpad boards yet: start empty there, or copy the open boards over. */
@@ -23,7 +24,7 @@ const chooseForNewPlace: NewPlaceChoice = async (where) => {
 };
 
 const PlaceIcon = ({ place }: { place: Place }) =>
-  place.kind === 'drive' ? <DriveIcon size={16} /> : place.kind === 'onedrive' ? <OneDriveIcon size={17} /> : place.kind === 'folder' ? <Folder size={16} /> : <Monitor size={16} />;
+  place.kind === 'drive' ? <DriveIcon size={16} /> : place.kind === 'onedrive' ? <OneDriveIcon size={17} /> : place.kind === 'folder' || place.kind === 'webfolder' ? <Folder size={16} /> : <Monitor size={16} />;
 
 /**
  * The logo, which opens the list of places this device keeps boards in (each Google
@@ -151,7 +152,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
                     <LogOut size={14} /> <span>Disconnect</span>
                   </button>
                 )}
-                {place.kind === 'folder' && !current && !place.isDefault && (
+                {((place.kind === 'folder' && !place.isDefault) || place.kind === 'webfolder') && !current && (
                   <button className="place-remove" disabled={busy} aria-label={`Remove ${name}`} title="Remove from list (the folder stays)" onClick={() => remove(place)}>
                     <X size={14} />
                   </button>
@@ -174,6 +175,11 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
           {nativeStorage() && (
             <button role="menuitem" disabled={busy} onClick={() => run(() => addFolder(chooseForNewPlace))}>
               <FolderPlus size={14} /> Add a folder on this computer
+            </button>
+          )}
+          {webFoldersSupported() && (
+            <button role="menuitem" disabled={busy} onClick={() => run(() => addWebFolder(chooseForNewPlace))}>
+              <FolderPlus size={14} /> Use a folder on this computer
             </button>
           )}
           <button role="menuitem" onClick={() => { setOpen(false); onSettings(); }}>

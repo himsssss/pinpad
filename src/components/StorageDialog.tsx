@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-react';
-import { afterSignIn, cloudInUse, switchStorage, useStore, type StorageTarget } from '../store';
+import { afterSignIn, cloudInUse, switchStorage, usingWebFolder, useStore, type StorageTarget } from '../store';
+import { allowWebFolder, chooseWebFolder, currentWebFolder, webFolderHasWorkspace, webFoldersSupported } from '../webFolderStorage';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
 import { oneDriveStorage } from '../oneDriveStorage';
@@ -30,6 +31,8 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'local' | 'drive' | 'onedrive'>(cloud ?? 'local');
   const [account, setAccount] = useState(googleAccount());
   const [msAccount, setMsAccount] = useState(microsoftAccount());
+  const [webFolder, setWebFolder] = useState(usingWebFolder() ? currentWebFolder() : null);
+  const pickFolders = !storage && webFoldersSupported();
   // A place that already has a workspace, waiting for the user to pick open or replace.
   const [conflict, setConflict] = useState<StorageTarget | null>(null);
   const [signOutAfter, setSignOutAfter] = useState<'google' | 'microsoft' | null>(null);
@@ -40,6 +43,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
     setCloud(cloudInUse());
     setAccount(googleAccount());
     setMsAccount(microsoftAccount());
+    setWebFolder(usingWebFolder() ? currentWebFolder() : null);
     if (storage) setLocation(await storage.location());
   };
   useEffect(() => {
@@ -72,6 +76,10 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
         setConflict(target);
         return false;
       }
+    }
+    if (target.kind === 'webfolder' && (await webFolderHasWorkspace(target.id))) {
+      setConflict(target);
+      return false;
     }
     if (target.kind === 'drive' || target.kind === 'onedrive') {
       const storage = target.kind === 'drive' ? driveStorage : oneDriveStorage;
@@ -131,7 +139,19 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
       await afterSignIn();
     });
 
-  const conflictPlace = conflict?.kind === 'drive' ? 'Your Google Drive' : conflict?.kind === 'onedrive' ? 'Your OneDrive' : 'That folder';
+  const chooseFolder = () =>
+    run(async () => {
+      const folder = await chooseWebFolder();
+      if (folder && folder.id !== webFolder?.id) await moveTo({ kind: 'webfolder', ...folder });
+    });
+
+  const allowFolder = () =>
+    run(async () => {
+      if (webFolder && (await allowWebFolder(webFolder.id, true))) await afterSignIn();
+    });
+
+  const conflictPlace =
+    conflict?.kind === 'drive' ? 'Your Google Drive' : conflict?.kind === 'onedrive' ? 'Your OneDrive' : conflict?.kind === 'webfolder' ? `The “${conflict.name}” folder` : 'That folder';
   const cloudName = drive ? 'Google Drive' : 'OneDrive';
   const oneDriveHere = microsoftConfigured() && microsoftAllowedHere();
   // Google only lets the website sign in from its registered addresses.
@@ -148,7 +168,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
 
         <div className="segmented" role="tablist" aria-label="Where to save">
           <button role="tab" aria-selected={tab === 'local'} onClick={() => setTab('local')}>
-            <HardDrive size={15} /> {storage ? 'This computer' : 'This browser'}
+            <HardDrive size={15} /> {storage || pickFolders ? 'This computer' : 'This browser'}
             {!cloud && <span className="segmented-badge">In use</span>}
           </button>
           <button role="tab" aria-selected={tab === 'drive'} onClick={() => setTab('drive')}>
@@ -182,11 +202,31 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
           </>
         )}
 
-        {tab === 'local' && !storage && (
+        {tab === 'local' && !storage && !webFolder && (
           <p className="dialog-text">
-            Boards are saved in this browser only, so clearing its site data deletes them. Save to Google Drive or
-            OneDrive, or use Export now and then, to keep a copy.
+            Boards are saved in this browser only, so clearing its site data deletes them.{' '}
+            {pickFolders
+              ? 'Choose a folder on this computer to keep them as files you can back up, or save to Google Drive or OneDrive.'
+              : 'Save to Google Drive or OneDrive, or use Export now and then, to keep a copy.'}
           </p>
+        )}
+
+        {tab === 'local' && webFolder && (
+          <>
+            <p className="dialog-text">
+              Pinpad saves each board as its own file in this folder, with a folder for each project and its attached
+              files. Pick a folder that iCloud Drive, OneDrive or Dropbox syncs to keep a backup.
+            </p>
+            <div className="storage-path">
+              <FolderOpen size={18} aria-hidden="true" />
+              <div>
+                <div className="storage-folder">{webFolder.name}</div>
+                <div className="storage-file">
+                  Folder on this computer{cloud ? ` · not in use while saving to ${cloudName}` : ''}
+                </div>
+              </div>
+            </div>
+          </>
         )}
 
         {tab === 'drive' && !googleConfigured() && (
@@ -279,7 +319,15 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 <button className="btn-primary" disabled={busy} onClick={changeFolder}>Change folder…</button>
               </>
             )}
-            {tab === 'local' && !storage && cloud && (
+            {tab === 'local' && webFolder && storageError && (
+              <button className="btn-secondary" disabled={busy} onClick={allowFolder}>Allow access</button>
+            )}
+            {tab === 'local' && pickFolders && (
+              <button className={webFolder || cloud ? 'btn-secondary' : 'btn-primary'} disabled={busy} onClick={chooseFolder}>
+                {webFolder ? 'Change folder…' : 'Choose a folder…'}
+              </button>
+            )}
+            {tab === 'local' && !storage && (cloud || webFolder) && (
               <button className="btn-primary" disabled={busy} onClick={() => run(() => switchStorage({ kind: 'browser' }, 'replace'))}>
                 Keep boards in this browser instead
               </button>

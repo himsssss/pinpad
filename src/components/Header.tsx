@@ -1,3 +1,5 @@
+import { microsoftConfigured } from '../microsoftAuth';
+import { webFoldersSupported } from '../webFolderStorage';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Folder, PanelLeftOpen, Download, FileImage, FileText, FolderCog, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import { exportBoardImage, exportBoardPdf } from '../exportBoard';
@@ -202,7 +204,7 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
           <button className="icon-btn" onClick={() => setMenu((m) => !m)} aria-label="Settings" title="Settings"><Settings size={18} /></button>
           {menu && (
             <div className="menu">
-              {(nativeStorage() || googleConfigured()) && (
+              {(nativeStorage() || googleConfigured() || microsoftConfigured() || webFoldersSupported()) && (
                 <button onClick={() => { setStorageOpen(true); setMenu(false); }}><FolderCog size={14} /> Storage location…</button>
               )}
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>

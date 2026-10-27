@@ -4,7 +4,8 @@
  * browser (website). One is open at a time and each has its own folders and projects.
  */
 
-import { browserHasBoards, cloudInUse, flushNow, switchStorage, usingDrive, usingOneDrive, getState } from './store';
+import { browserHasBoards, cloudInUse, flushNow, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
+import { chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderHasWorkspace, webFolders, webFoldersSupported } from './webFolderStorage';
 import { nativeStorage } from './native';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
@@ -18,6 +19,8 @@ export type Place =
   | { id: string; kind: 'drive'; account: string }
   | { id: string; kind: 'onedrive'; account: string }
   | { id: string; kind: 'folder'; folder: string; isDefault: boolean }
+  /** A folder on this computer picked on the website (Chrome and Edge). */
+  | { id: string; kind: 'webfolder'; folderId: string; name: string }
   | { id: string; kind: 'browser' };
 
 const FOLDERS_KEY = 'pinpad:folders';
@@ -52,6 +55,10 @@ export async function listPlaces(): Promise<{ places: Place[]; current: string }
     if (!cloudInUse()) current = `folder:${loc.folder}`;
   } else {
     places.push({ id: 'browser', kind: 'browser' });
+    if (webFoldersSupported()) {
+      for (const f of await webFolders()) places.push({ id: `webfolder:${f.id}`, kind: 'webfolder', folderId: f.id, name: f.name });
+      if (usingWebFolder()) current = `webfolder:${currentWebFolder()!.id}`;
+    }
   }
   if (googleConfigured()) {
     for (const account of googleAccounts()) places.push({ id: `drive:${account}`, kind: 'drive', account });
@@ -97,6 +104,14 @@ export async function openPlace(place: Place, choose: NewPlaceChoice) {
     if (keep) await switchStorage({ kind: 'folder', folder }, keep);
     return;
   }
+  if (place.kind === 'webfolder') {
+    // Asks the browser for permission if needed, so this runs from a click.
+    const target = { kind: 'webfolder' as const, id: place.folderId, name: place.name };
+    if (await webFolderHasWorkspace(place.folderId)) return switchStorage(target, 'open');
+    const keep = await choose(`the “${place.name}” folder`);
+    if (keep) await switchStorage(target, keep);
+    return;
+  }
   if (await browserHasBoards()) return switchStorage({ kind: 'browser' }, 'open');
   const keep = await choose('this browser');
   if (keep) await switchStorage({ kind: 'browser' }, keep);
@@ -117,6 +132,12 @@ export async function addOneDrive(choose: NewPlaceChoice) {
   await openPlace({ id: `onedrive:${account}`, kind: 'onedrive', account }, choose);
 }
 
+/** Picks a folder on this computer from the website (Chrome and Edge) and opens it. */
+export async function addWebFolder(choose: NewPlaceChoice) {
+  const folder = await chooseWebFolder();
+  if (folder) await openPlace({ id: `webfolder:${folder.id}`, kind: 'webfolder', folderId: folder.id, name: folder.name }, choose);
+}
+
 /** Adds a folder on this computer (desktop apps) and opens it. */
 export async function addFolder(choose: NewPlaceChoice) {
   const native = nativeStorage();
@@ -131,6 +152,7 @@ export async function addFolder(choose: NewPlaceChoice) {
 export async function removePlace(place: Place) {
   if (place.kind === 'drive') await signOut(place.account);
   if (place.kind === 'onedrive') await microsoftSignOut(place.account);
+  if (place.kind === 'webfolder') await forgetWebFolder(place.folderId);
   if (place.kind === 'folder') saveFolders(savedFolders().filter((f) => f !== place.folder));
 }
 
@@ -141,6 +163,9 @@ export function describePlace(place: Place, current: boolean) {
   }
   if (place.kind === 'onedrive') {
     return { name: 'OneDrive', detail: place.account };
+  }
+  if (place.kind === 'webfolder') {
+    return { name: place.name, detail: 'Folder on this computer' };
   }
   if (place.kind === 'folder') {
     const name = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;

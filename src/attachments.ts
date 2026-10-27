@@ -10,7 +10,8 @@ import { load, save } from './persist';
 import { nativeStorage } from './native';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
-import { attachmentLocation, retrySave, usingDrive, usingOneDrive } from './store';
+import { webFolderStorage } from './webFolderStorage';
+import { attachmentLocation, retrySave, usingDrive, usingOneDrive, usingWebFolder } from './store';
 import { uid } from './doc';
 import { legacyAttachmentPath } from './workspaceFiles';
 
@@ -56,6 +57,7 @@ function toBase64(blob: Blob) {
 async function readFromStorage(path: string, type: string): Promise<Blob | null> {
   if (usingDrive()) return driveStorage.readAttachment(path);
   if (usingOneDrive()) return oneDriveStorage.readAttachment(path);
+  if (usingWebFolder()) return webFolderStorage.readAttachment(path);
   const native = nativeStorage();
   const data = native ? await native.readFile(path) : null;
   return data == null ? null : (await fetch(`data:${type || 'application/octet-stream'};base64,${data}`)).blob();
@@ -67,6 +69,7 @@ export async function storeAttachment(ref: string, path: string) {
   if (!blob) return false;
   if (usingDrive()) await driveStorage.writeAttachment(path, blob);
   else if (usingOneDrive()) await oneDriveStorage.writeAttachment(path, blob);
+  else if (usingWebFolder()) await webFolderStorage.writeAttachment(path, blob);
   else await nativeStorage()?.writeFile({ path, data: await toBase64(blob) });
   return true;
 }
@@ -75,6 +78,7 @@ export async function storeAttachment(ref: string, path: string) {
 export async function moveAttachment(from: string, to: string): Promise<boolean> {
   if (usingDrive()) return driveStorage.moveFile(from, to);
   if (usingOneDrive()) return oneDriveStorage.moveFile(from, to);
+  if (usingWebFolder()) return webFolderStorage.moveFile(from, to);
   return (await nativeStorage()?.moveFile({ from, to })) ?? false;
 }
 
@@ -89,6 +93,7 @@ export async function trashAttachment(ref: string, path: string) {
   }
   if (usingDrive()) await driveStorage.trashFile(path);
   else if (usingOneDrive()) await oneDriveStorage.trashFile(path);
+  else if (usingWebFolder()) await webFolderStorage.trashFile(path);
   else await nativeStorage()?.trashFile(path);
 }
 
