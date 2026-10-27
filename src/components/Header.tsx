@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Download, FolderCog, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
-import { getState, mutate, openBoard, parseWorkspace, redo, undo, useStore } from '../store';
+import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
+import { parseWorkspace } from '../workspaceFiles';
 import { nativeStorage } from '../native';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';

@@ -164,9 +164,11 @@ final class PageFetcher: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
-/// Keeps the workspace as a JSON file in a folder the user picks (Documents/Pinpad by
-/// default), so boards can live in a synced or backed-up folder. Exposed to the page as
-/// `window.pinpadNative.storage`; the Windows app's preload offers the same calls.
+/// Keeps the workspace as files in a folder the user picks (Documents/Pinpad by default):
+/// an index plus one JSON file per board, laid out by src/workspaceFiles.ts, so boards can
+/// live in a synced or backed-up folder. Exposed to the page as `window.pinpadNative.storage`;
+/// the Windows app's preload offers the same calls. Paths from the page are relative to the
+/// folder, with / separators.
 @MainActor
 final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
   static let script = """
@@ -175,8 +177,8 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       window.pinpadNative = Object.assign(window.pinpadNative || {}, { storage: {
         location: () => call('location'),
         inspect: (folder) => call('inspect', folder),
-        read: () => call('read'),
-        write: (text) => call('write', text),
+        read: (paths) => call('read', paths),
+        write: (batch) => call('write', batch),
         choose: () => call('choose'),
         use: (folder) => call('use', folder),
         reveal: () => call('reveal'),
@@ -200,6 +202,32 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       "isDefault": folder.standardizedFileURL == defaultFolder.standardizedFileURL,
       "exists": FileManager.default.fileExists(atPath: file.path),
     ]
+  }
+
+  struct StorageError: LocalizedError {
+    let errorDescription: String?
+  }
+
+  /// A page-supplied relative path inside the folder; anything else is refused.
+  nonisolated private static func resolve(_ relative: String, in folder: URL) throws -> URL {
+    let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+    guard relative.hasSuffix(".json"), !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." || $0.contains(":") })
+    else { throw StorageError(errorDescription: "Bad workspace path \(relative)") }
+    return parts.reduce(folder) { $0.appendingPathComponent(String($1)) }
+  }
+
+  /// Removes folders left empty by a moved or deleted board, up to the storage folder.
+  nonisolated private static func pruneEmpty(above file: URL, in folder: URL) {
+    let fm = FileManager.default
+    var dir = file.deletingLastPathComponent().standardizedFileURL
+    let root = folder.standardizedFileURL.path
+    while dir.path.hasPrefix(root + "/") {
+      guard let entries = try? fm.contentsOfDirectory(atPath: dir.path),
+        entries.allSatisfy({ $0 == ".DS_Store" })
+      else { return }
+      try? fm.removeItem(at: dir)
+      dir = dir.deletingLastPathComponent()
+    }
   }
 
   /// Reads and writes run off the main thread, in order, so a large workspace (or macOS asking
@@ -230,7 +258,8 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       replyHandler(nil, "Bad storage request")
       return
     }
-    let arg = body["arg"] as? String
+    let raw = body["arg"]
+    let arg = raw as? String
     switch op {
     case "location":
       replyHandler(location(), nil)
@@ -238,15 +267,37 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       let path = URL(fileURLWithPath: arg ?? folder.path).appendingPathComponent(Self.fileName).path
       replyHandler(["hasWorkspace": FileManager.default.fileExists(atPath: path)], nil)
     case "read":
-      let file = file
+      let (folder, paths) = (folder, raw as? [String] ?? [])
       onIOQueue(replyHandler) {
-        FileManager.default.fileExists(atPath: file.path) ? try String(contentsOf: file, encoding: .utf8) as Any : NSNull()
+        var out: [String: Any] = [:]
+        for path in paths {
+          let url = try Self.resolve(path, in: folder)
+          out[path] = FileManager.default.fileExists(atPath: url.path) ? try String(contentsOf: url, encoding: .utf8) : NSNull()
+        }
+        return out
       }
     case "write":
-      let (folder, file, data) = (folder, file, Data((arg ?? "").utf8))
+      let batch = raw as? [String: Any] ?? [:]
+      let folder = folder
+      let writes = batch["write"] as? [[String]] ?? []
+      let (remove, trash) = (batch["remove"] as? [String] ?? [], batch["trash"] as? [String] ?? [])
       onIOQueue(replyHandler) {
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try data.write(to: file, options: .atomic)
+        let fm = FileManager.default
+        for pair in writes where pair.count == 2 {
+          let url = try Self.resolve(pair[0], in: folder)
+          try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+          try Data(pair[1].utf8).write(to: url, options: .atomic)
+        }
+        for path in remove {
+          let url = try Self.resolve(path, in: folder)
+          if fm.fileExists(atPath: url.path) { try fm.removeItem(at: url) }
+          Self.pruneEmpty(above: url, in: folder)
+        }
+        for path in trash {
+          let url = try Self.resolve(path, in: folder)
+          if fm.fileExists(atPath: url.path) { try fm.trashItem(at: url, resultingItemURL: nil) }
+          Self.pruneEmpty(above: url, in: folder)
+        }
         return true
       }
     case "choose":
@@ -270,11 +321,8 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       }
       replyHandler(location(), nil)
     case "reveal":
-      if FileManager.default.fileExists(atPath: file.path) {
-        NSWorkspace.shared.activateFileViewerSelecting([file])
-      } else {
-        NSWorkspace.shared.open(folder)
-      }
+      try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+      NSWorkspace.shared.open(folder)
       replyHandler(true, nil)
     default:
       replyHandler(nil, "Unknown storage request \(op)")

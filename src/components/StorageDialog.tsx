@@ -72,8 +72,8 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
           <button className="icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
         </div>
         <p className="dialog-text">
-          Pinpad saves your boards as one file in this folder. Pick a folder that iCloud Drive, OneDrive or
-          Dropbox syncs to keep a backup.
+          Pinpad saves each board as its own file here, with a folder for each project. Pick a folder
+          that iCloud Drive, OneDrive or Dropbox syncs to keep a backup.
         </p>
 
         <div className="storage-path">

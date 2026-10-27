@@ -28,9 +28,9 @@ Get the latest build from the [Releases](../../releases) page:
 - **Folders sidebar** with subfolders; drag projects between folders
 - Pan, zoom, marquee select, undo/redo, copy/paste, and search across every board (Ctrl/⌘ K)
 - Export and import your whole workspace as JSON
-- **Storage folder (desktop apps):** your boards are saved as `Pinpad Workspace.json` in
-  Documents/Pinpad, or any folder you choose under ⚙ → Storage location (a synced folder works
-  as a backup)
+- **Storage folder (desktop apps):** each board is saved as its own JSON file, with a folder
+  per project (inside its sidebar folder), in Documents/Pinpad or any folder you choose under
+  ⚙ → Storage location. A synced folder works as a backup.
 
 ## Development
 
@@ -59,7 +59,8 @@ app uses Electron (`desktop/`). Both load the same web build from inside the app
 ```
 src/            React + TypeScript web app (Vite)
   components/   canvas, toolbar, sidebar, cards
-  store.ts      state, undo history, persistence (IndexedDB, plus the workspace file on desktop)
+  store.ts      state, undo history, persistence (IndexedDB, plus board files on desktop)
+  workspaceFiles.ts  how the workspace is laid out as files on disk
   native.ts     what the desktop apps expose to the page
 macos/          native macOS shell, icon generator, build/install scripts
 desktop/        Electron shell and Windows icons

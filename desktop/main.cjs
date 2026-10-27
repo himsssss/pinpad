@@ -90,11 +90,11 @@ function startEmbedServer() {
 }
 
 /**
- * Keeps the workspace as a JSON file in a folder the user picks (Documents\Pinpad by
- * default). Same calls as StorageBridge in the macOS shell; the choice lives in
- * settings.json in the app's data folder.
+ * Keeps the workspace as files in a folder the user picks (Documents\Pinpad by default):
+ * an index plus one JSON file per board, laid out by src/workspaceFiles.ts. Same calls as
+ * StorageBridge in the macOS shell; the choice lives in settings.json in the app's data folder.
  */
-const WORKSPACE_FILE = 'Pinpad Workspace.json';
+const INDEX_FILE = 'Pinpad Workspace.json';
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const defaultFolder = () => path.join(app.getPath('documents'), 'Pinpad');
 
@@ -120,26 +120,61 @@ async function storageFolder() {
 
 async function storageLocation() {
   const folder = await storageFolder();
-  const file = path.join(folder, WORKSPACE_FILE);
+  const file = path.join(folder, INDEX_FILE);
   return { folder, file, defaultFolder: defaultFolder(), isDefault: sameFolder(folder, defaultFolder()), exists: await exists(file) };
+}
+
+/** A page-supplied relative path inside the storage folder; anything else is refused. */
+function resolveInside(folder, relative) {
+  const parts = String(relative).split('/');
+  if (!relative.endsWith('.json') || parts.some((p) => !p || p === '.' || p === '..' || /[\\:]/.test(p))) {
+    throw new Error(`Bad workspace path ${relative}`);
+  }
+  return path.join(folder, ...parts);
+}
+
+/** Removes folders left empty by a moved or deleted board, up to the storage folder. */
+async function pruneEmpty(folder, file) {
+  for (let dir = path.dirname(file); dir.startsWith(folder + path.sep); dir = path.dirname(dir)) {
+    const entries = (await fs.readdir(dir).catch(() => ['?'])).filter((e) => e !== '.DS_Store' && e !== 'desktop.ini');
+    if (entries.length) return;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 }
 
 async function storage(event, op, arg) {
   const folder = await storageFolder();
-  const file = path.join(folder, WORKSPACE_FILE);
   switch (op) {
     case 'location':
       return storageLocation();
     case 'inspect':
-      return { hasWorkspace: await exists(path.join(arg || folder, WORKSPACE_FILE)) };
-    case 'read':
-      return (await exists(file)) ? fs.readFile(file, 'utf8') : null;
+      return { hasWorkspace: await exists(path.join(arg || folder, INDEX_FILE)) };
+    case 'read': {
+      const out = {};
+      for (const rel of arg || []) {
+        const file = resolveInside(folder, rel);
+        out[rel] = (await exists(file)) ? await fs.readFile(file, 'utf8') : null;
+      }
+      return out;
+    }
     case 'write': {
-      // Write beside the file, then swap it in, so a crash never leaves half a workspace.
-      await fs.mkdir(folder, { recursive: true });
-      const tmp = `${file}.tmp`;
-      await fs.writeFile(tmp, String(arg ?? ''));
-      await fs.rename(tmp, file);
+      // Each file is written beside itself and swapped in, so a crash never leaves half a board.
+      for (const [rel, text] of arg.write) {
+        const file = resolveInside(folder, rel);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(`${file}.tmp`, String(text));
+        await fs.rename(`${file}.tmp`, file);
+      }
+      for (const rel of arg.remove) {
+        const file = resolveInside(folder, rel);
+        await fs.rm(file, { force: true });
+        await pruneEmpty(folder, file);
+      }
+      for (const rel of arg.trash) {
+        const file = resolveInside(folder, rel);
+        if (await exists(file)) await shell.trashItem(file);
+        await pruneEmpty(folder, file);
+      }
       return true;
     }
     case 'choose': {
@@ -160,8 +195,8 @@ async function storage(event, op, arg) {
       return storageLocation();
     }
     case 'reveal':
-      if (await exists(file)) shell.showItemInFolder(file);
-      else await shell.openPath(folder);
+      await fs.mkdir(folder, { recursive: true });
+      await shell.openPath(folder);
       return true;
     default:
       throw new Error(`Unknown storage request ${op}`);

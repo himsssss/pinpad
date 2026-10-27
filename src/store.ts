@@ -3,7 +3,8 @@ import { produce, type Draft } from 'immer';
 import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { deleteElements, seedDoc } from './doc';
-import { nativeStorage } from './native';
+import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
+import { assembleWorkspace, INDEX_FILE, layoutWorkspace, parseIndex, type Layout } from './workspaceFiles';
 
 export interface State {
   doc: Doc;
@@ -138,8 +139,8 @@ export function openBoard(boardId: string) {
 // ---- persistence ----
 // The document (which can hold images) lives in IndexedDB; the small view state goes to
 // localStorage synchronously so a reload always reopens the board you were on. The desktop
-// apps also keep the document as a JSON file in the user's storage folder, which is the copy
-// they load; IndexedDB stays as a backup.
+// apps also keep the document as files in the user's storage folder (one per board, see
+// workspaceFiles.ts), which is the copy they load; IndexedDB stays as a backup.
 
 // Original name kept so saved view state still loads.
 const UI_KEY = 'milanote-clone:ui';
@@ -162,41 +163,70 @@ function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'colla
   }
 }
 
-/** Set when the workspace file exists but couldn't be read, so it's never overwritten. */
+/** Set when the workspace files exist but couldn't be read, so they're never overwritten. */
 let fileBlocked = false;
 /** File writes run one at a time, in order. */
 let writing: Promise<unknown> = Promise.resolve();
+/** The files as of the last successful save, so each save writes only what changed. */
+let onDisk: Layout = { files: new Map(), paths: new Map() };
+const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-function writeFile(doc: Doc) {
+/** What to write, and which old files to clear away, to go from onDisk to the next layout. */
+function changesTo(next: Layout): StorageBatch {
+  const write = [...next.files].filter(([path, text]) => onDisk.files.get(path) !== text);
+  // Compared ignoring case: on macOS and Windows "Plan.json" and "plan.json" are one file,
+  // so renaming a board's case rewrites the file in place and nothing may be removed.
+  const kept = new Set([...next.files.keys()].map((p) => p.toLowerCase()));
+  const remove: string[] = [];
+  const trash: string[] = [];
+  for (const [id, path] of onDisk.paths) {
+    if (kept.has(path.toLowerCase())) continue;
+    (next.paths.has(id) ? remove : trash).push(path);
+  }
+  return { write, remove, trash };
+}
+
+function writeFiles(doc: Doc) {
   const storage = nativeStorage();
   if (!storage || fileBlocked) return writing;
-  const text = JSON.stringify(doc);
-  writing = writing.then(() =>
-    storage.write(text).then(
-      () => state.storageError && setState({ storageError: null }),
-      (err) => setState({ storageError: `Couldn't save to your storage folder: ${errorText(err)}` }),
-    ),
-  );
+  writing = writing.then(async () => {
+    const next = layoutWorkspace(doc);
+    const batch = changesTo(next);
+    if (!batch.write.length && !batch.remove.length && !batch.trash.length) return;
+    try {
+      await storage.write(batch);
+      onDisk = next;
+      if (state.storageError) setState({ storageError: null });
+    } catch (err) {
+      setState({ storageError: `Couldn't save to your storage folder: ${errorText(err)}` });
+    }
+  });
   return writing;
+}
+
+/** Loads the workspace from the storage folder; null when the folder has none yet. */
+async function readFiles(storage: NativeStorage): Promise<{ doc: Doc; disk: Layout } | null> {
+  const indexText = (await storage.read([INDEX_FILE]))[INDEX_FILE];
+  if (indexText == null) return null;
+  const parsed = parseIndex(indexText);
+  // The earlier single-file format: the next save splits it into board files.
+  if ('doc' in parsed) return { doc: parsed.doc, disk: nothingOnDisk() };
+  const paths = Object.values(parsed.index.boards);
+  const texts = await storage.read(paths);
+  const doc = assembleWorkspace(parsed.index, texts);
+  const files = new Map(paths.map((p) => [p, texts[p] ?? '']));
+  files.set(INDEX_FILE, indexText);
+  return { doc, disk: { files, paths: new Map(Object.entries(parsed.index.boards)) } };
 }
 
 async function flush() {
   clearTimeout(persistTimer);
   persistTimer = undefined;
   const doc = state.doc;
-  await Promise.all([save('doc', doc), writeFile(doc)]);
+  await Promise.all([save('doc', doc), writeFiles(doc)]);
   if (persistTimer === undefined) setState({ saved: true });
-}
-
-/** Parses an exported or stored workspace, throwing if it isn't one. */
-export function parseWorkspace(text: string): Doc {
-  const doc = JSON.parse(text) as Doc;
-  if (!doc?.boards?.[doc.rootId] || !doc.elements) throw new Error('Not a Pinpad workspace file');
-  // Workspaces saved before folders existed.
-  doc.folders ??= {};
-  return doc;
 }
 
 /** Writes any pending change now (the desktop apps call this before quitting). */
@@ -207,8 +237,8 @@ export async function flushNow() {
 
 /**
  * Points the desktop app at another storage folder. "open" loads the workspace already in
- * that folder; "replace" writes the current boards there. The old folder's file is left
- * alone either way.
+ * that folder; "replace" sends that workspace's board files to the Trash and writes the
+ * current boards there. The old folder is left alone either way.
  */
 export async function switchStorageFolder(folder: string | null, keep: 'open' | 'replace') {
   const storage = nativeStorage();
@@ -217,20 +247,33 @@ export async function switchStorageFolder(folder: string | null, keep: 'open' | 
   const previous = await storage.location();
   await storage.use(folder);
   if (keep === 'replace') {
+    // Its board files go to the Trash first, even ones a current board is about to reuse
+    // the name of (every workspace has a Home.json), so nothing is overwritten unrecoverably.
+    let replaced: string[] = [];
+    try {
+      const indexText = (await storage.read([INDEX_FILE]))[INDEX_FILE];
+      const parsed = indexText ? parseIndex(indexText) : null;
+      if (parsed && 'index' in parsed) replaced = Object.values(parsed.index.boards);
+    } catch {
+      // An unreadable index there just gets overwritten.
+    }
+    if (replaced.length) await storage.write({ write: [], remove: [], trash: replaced });
+    onDisk = nothingOnDisk();
     fileBlocked = false;
     setState({ storageError: null });
-    await writeFile(state.doc);
+    await writeFiles(state.doc);
     return;
   }
-  let doc: Doc;
+  let found: Awaited<ReturnType<typeof readFiles>>;
   try {
-    const text = await storage.read();
-    if (text == null) throw new Error('No workspace file in that folder');
-    doc = parseWorkspace(text);
+    found = await readFiles(storage);
+    if (!found) throw new Error('No Pinpad workspace in that folder');
   } catch (err) {
     await storage.use(previous.isDefault ? null : previous.folder);
     throw err;
   }
+  const { doc, disk } = found;
+  onDisk = disk;
   fileBlocked = false;
   past = [];
   future = [];
@@ -254,18 +297,19 @@ function schedulePersist() {
 export async function initStore() {
   let doc = await load<Doc>('doc').catch(() => undefined);
   let storageError: string | null = null;
-  let fileMissing = false;
   const storage = nativeStorage();
   if (storage) {
-    // The file in the storage folder wins; IndexedDB is the fallback and, on the first
-    // launch with folder storage, the boards that get moved into the file.
+    // The files in the storage folder win; IndexedDB is the fallback and, the first time
+    // folder storage is used, the boards that get written out as files.
     try {
-      const text = await storage.read();
-      if (text == null) fileMissing = true;
-      else doc = parseWorkspace(text);
+      const found = await readFiles(storage);
+      if (found) {
+        doc = found.doc;
+        onDisk = found.disk;
+      }
     } catch (err) {
       fileBlocked = true;
-      storageError = `Couldn't read the workspace file in your storage folder (${errorText(err)}). Showing the copy saved in the app; changes won't be written to that file until you choose a folder in Storage location.`;
+      storageError = `Couldn't read the workspace in your storage folder (${errorText(err)}). Showing the copy saved in the app; nothing will be written to that folder until you choose one in Storage location.`;
     }
   }
   const savedUI = loadUI();
@@ -297,5 +341,5 @@ export async function initStore() {
     storageError,
   };
   save('doc', doc);
-  if (fileMissing) writeFile(doc);
+  writeFiles(doc);
 }

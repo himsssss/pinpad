@@ -10,23 +10,35 @@ export interface PageResponse {
 }
 
 export interface StorageLocation {
-  /** Folder holding the workspace file. */
+  /** Folder holding the workspace. */
   folder: string;
-  /** Full path of the workspace file inside it. */
+  /** Full path of the workspace index (Pinpad Workspace.json) inside it. */
   file: string;
   defaultFolder: string;
   isDefault: boolean;
-  /** Whether the workspace file has been written yet. */
+  /** Whether the index has been written yet. */
   exists: boolean;
 }
 
-/** The workspace kept as a JSON file in a folder the user chooses. */
+/** One save: files to write in order, files whose content now lives elsewhere, files to trash. */
+export interface StorageBatch {
+  write: [path: string, text: string][];
+  /** Old paths of renamed or moved boards; their content was just written under the new path. */
+  remove: string[];
+  /** Files of deleted boards; they go to the Trash (Recycle Bin), not straight to deletion. */
+  trash: string[];
+}
+
+/**
+ * The workspace kept as files in a folder the user chooses (layout in workspaceFiles.ts).
+ * Paths are relative to that folder, with / separators.
+ */
 export interface NativeStorage {
   location(): Promise<StorageLocation>;
   inspect(folder: string): Promise<{ hasWorkspace: boolean }>;
-  /** The workspace file's text, or null when there's no file yet. */
-  read(): Promise<string | null>;
-  write(text: string): Promise<boolean>;
+  /** Each file's text, or null for a file that doesn't exist. */
+  read(paths: string[]): Promise<Record<string, string | null>>;
+  write(batch: StorageBatch): Promise<boolean>;
   /** Shows the system folder picker; null when cancelled. */
   choose(): Promise<string | null>;
   /** Switches to a folder (null for the default) without moving any files. */
