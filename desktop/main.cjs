@@ -391,15 +391,32 @@ function createWindow() {
     if (isWebUrl(url)) shell.openExternal(url);
   });
 
-  // Give the page a moment to write its last pending change before the window goes away.
-  let closing = false;
+  // Let the page save what's pending, then warn if something still isn't saved (it couldn't
+  // reach Google Drive or the storage folder, or saving is taking too long).
+  let checking = false;
   win.on('close', (event) => {
-    if (closing) return;
     event.preventDefault();
-    closing = true;
-    const flush = win.webContents.executeJavaScript('window.__flushSave?.()').catch(() => {});
-    const timeout = new Promise((resolve) => setTimeout(resolve, 2000));
-    Promise.race([flush, timeout]).finally(() => win.destroy());
+    if (checking) return;
+    checking = true;
+    const reason = win.webContents.executeJavaScript('window.__unsavedReason ? window.__unsavedReason() : null').catch(() => null);
+    const slow = new Promise((resolve) => setTimeout(() => resolve('Pinpad is still saving your latest changes.'), 6000));
+    Promise.race([reason, slow]).then(async (unsaved) => {
+      if (unsaved) {
+        const { response } = await dialog.showMessageBox(win, {
+          type: 'warning',
+          message: "Some changes aren't saved yet",
+          detail: `${unsaved}\n\nIf you close Pinpad now, they may be lost.`,
+          buttons: ['Keep Pinpad Open', 'Close Anyway'],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (response !== 1) {
+          checking = false;
+          return;
+        }
+      }
+      win.destroy();
+    });
   });
 
   win.loadURL(START_URL);

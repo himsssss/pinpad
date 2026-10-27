@@ -236,6 +236,10 @@ let backend: Backend | undefined;
 let fileBlocked = false;
 /** File writes run one at a time, in order. */
 let writing: Promise<unknown> = Promise.resolve();
+/** Writes queued or running, so closing can tell whether a save is still on its way. */
+let writesPending = 0;
+/** The boards as loaded when saving to files was stopped; anything changed since isn't saved there. */
+let blockedDoc: Doc | null = null;
 /** The files as of the last successful save, so each save writes only what changed. */
 let onDisk: Layout = { files: new Map(), paths: new Map() };
 const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
@@ -245,7 +249,14 @@ const snapshot = (listing: Listed[]) => new Map(listing.map((f) => [f.path, f.mo
 const unchanged = (listing: Listed[]) =>
   !!seen && seen.size === listing.length && listing.every((f) => seen!.get(f.path) === f.modified);
 
-const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+/** An error as a short sentence: without the Windows app's IPC wrapping, and plain words for common file errors. */
+function errorText(err: unknown) {
+  const message = (err instanceof Error ? err.message : String(err)).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '');
+  if (/EACCES|EPERM|permission/i.test(message)) return 'Pinpad isn’t allowed to write in that folder';
+  if (/ENOSPC/.test(message)) return 'the disk is full';
+  if (/ENOENT/.test(message)) return 'the folder can’t be found';
+  return message;
+}
 
 /** Whether saving is stopped because the saved files couldn't be loaded. */
 export const storageBlocked = () => fileBlocked;
@@ -268,6 +279,7 @@ function changesTo(next: Layout): StorageBatch {
 function writeFiles(doc: Doc) {
   const target = backend;
   if (!target || fileBlocked) return writing;
+  writesPending++;
   writing = writing.then(async () => {
     const next = layoutWorkspace(doc);
     const batch = changesTo(next);
@@ -289,6 +301,8 @@ function writeFiles(doc: Doc) {
       // Without a fresh listing the next check just reads everything again.
       seen = null;
     }
+  }).finally(() => {
+    writesPending--;
   });
   return writing;
 }
@@ -406,6 +420,26 @@ async function flush() {
   const doc = state.doc;
   await Promise.all([saveLocal(doc), writeFiles(doc)]);
   if (persistTimer === undefined) setState({ saved: true });
+}
+
+/** Whether some change hasn't reached storage yet (checked without waiting, for the website's leave warning). */
+function hasUnsavedNow() {
+  const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR);
+  return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc);
+}
+
+/**
+ * Saves anything pending, then says why closing now would lose changes, or null when
+ * everything is saved. The desktop apps ask this before closing the window or quitting.
+ */
+export async function unsavedReason(): Promise<string | null> {
+  await flushNow();
+  if (fileBlocked && state.doc !== blockedDoc) {
+    return `Your latest changes are only on this device: Pinpad couldn't open your boards in ${placeName()}, so it isn't saving there.`;
+  }
+  const error = state.storageError;
+  if (error && !error.startsWith(SYNC_ERROR)) return error;
+  return null;
 }
 
 /** Writes any pending change now (the desktop apps call this before quitting). */
@@ -553,6 +587,14 @@ export async function initStore() {
   const savedUI = loadUI();
   const flushPending = () => persistTimer !== undefined && flush();
   (window as Window & { __flushSave?: () => Promise<void> }).__flushSave = flushNow;
+  (window as Window & { __unsavedReason?: () => Promise<string | null> }).__unsavedReason = unsavedReason;
+  // The website asks the browser to warn before leaving with changes that aren't saved yet.
+  window.addEventListener('beforeunload', (e) => {
+    if (window.pinpadNative || !hasUnsavedNow()) return;
+    flushPending();
+    e.preventDefault();
+    e.returnValue = '';
+  });
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushPending() : syncFromStorage()));
   window.addEventListener('focus', () => syncFromStorage());
@@ -601,6 +643,7 @@ export async function initStore() {
     storageError,
     storageName: null,
   };
+  if (fileBlocked) blockedDoc = doc;
   refreshStorageName().catch(() => {});
   saveLocal(doc);
   writeFiles(doc);

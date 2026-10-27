@@ -644,7 +644,7 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   private var window: NSWindow!
   private var webView: WKWebView!
   private var titleObservation: NSKeyValueObservation?
@@ -684,6 +684,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       defer: false
     )
     window.title = "Pinpad"
+    window.delegate = self
     window.minSize = NSSize(width: 640, height: 480)
     window.tabbingMode = .disallowed
     window.contentView = webView
@@ -716,17 +717,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     true
   }
 
-  /// Gives the page a moment to write its last pending change to IndexedDB before quitting.
-  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    guard let webView else { return .terminateNow }
-    var replied = false
-    let reply = {
-      if replied { return }
-      replied = true
-      NSApp.reply(toApplicationShouldTerminate: true)
+  /// Set once the user has agreed to close (everything was saved, or they chose to close anyway).
+  private var closeConfirmed = false
+
+  /// Lets the page save what's pending, then warns if something still isn't saved (it couldn't
+  /// reach Google Drive or the storage folder, or saving is taking too long).
+  private func confirmClose(_ done: @escaping @MainActor (Bool) -> Void) {
+    guard let webView, !closeConfirmed else { return done(true) }
+    var answered = false
+    let answer: @MainActor (String?) -> Void = { [weak self] reason in
+      guard !answered, let self else { return }
+      answered = true
+      guard let reason else {
+        self.closeConfirmed = true
+        return done(true)
+      }
+      let alert = NSAlert()
+      alert.alertStyle = .warning
+      alert.messageText = "Some changes aren't saved yet"
+      alert.informativeText = "\(reason)\n\nIf you close Pinpad now, they may be lost."
+      alert.addButton(withTitle: "Keep Pinpad Open")
+      alert.addButton(withTitle: "Close Anyway")
+      let finish: (NSApplication.ModalResponse) -> Void = { response in
+        let close = response == .alertSecondButtonReturn
+        if close { self.closeConfirmed = true }
+        done(close)
+      }
+      if let window = self.window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: finish) }
+      else { finish(alert.runModal()) }
     }
-    webView.callAsyncJavaScript("await window.__flushSave?.()", arguments: [:], in: nil, in: .page) { _ in reply() }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { reply() }
+    webView.callAsyncJavaScript("return await window.__unsavedReason?.() ?? null", arguments: [:], in: nil, in: .page) { result in
+      switch result {
+      case .success(let value): answer(value as? String)
+      case .failure: answer(nil)
+      }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 6) { answer("Pinpad is still saving your latest changes.") }
+  }
+
+  /// Closing the window quits the app, so it's checked here, while the window can still stay open.
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    if closeConfirmed { return true }
+    confirmClose { ok in if ok { sender.close() } }
+    return false
+  }
+
+  /// Quitting (⌘Q) gets the same check as closing the window.
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if closeConfirmed || webView == nil { return .terminateNow }
+    confirmClose { ok in NSApp.reply(toApplicationShouldTerminate: ok) }
     return .terminateLater
   }
 
