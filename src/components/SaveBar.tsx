@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 
 /**
- * A thin bar under the logo showing saving: it moves while a save is on its way, fills as
- * Google Drive takes each file, completes and fades once everything is saved, and turns red
- * when saving fails.
+ * A thin bar under the logo showing saving: it moves while your changes are being saved,
+ * fills as Google Drive takes each file, completes and fades once everything is saved, and
+ * turns red when saving fails. It follows the save dot: Pinpad's own background writes
+ * (after opening, or after picking up changes from Drive) don't show.
  */
 export function SaveBar() {
   const saved = useStore((s) => s.saved);
@@ -14,7 +15,7 @@ export function SaveBar() {
   const wasSaving = useRef(false);
 
   useEffect(() => {
-    if (!saved || progress !== null) {
+    if (!saved) {
       wasSaving.current = true;
       return;
     }
@@ -24,9 +25,9 @@ export function SaveBar() {
     setFinishing(true);
     const t = setTimeout(() => setFinishing(false), 900);
     return () => clearTimeout(t);
-  }, [saved, progress]);
+  }, [saved]);
 
-  const state = failed ? 'failed' : progress !== null ? 'progress' : !saved ? 'busy' : finishing ? 'done' : 'idle';
+  const state = failed ? 'failed' : !saved ? (progress !== null ? 'progress' : 'busy') : finishing ? 'done' : 'idle';
   const label = failed ? 'Not saved' : state === 'idle' || state === 'done' ? 'All changes saved' : 'Saving…';
   return (
     <div className={`save-bar ${state}`} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress !== null ? Math.round(progress * 100) : undefined}>
