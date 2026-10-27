@@ -45,7 +45,6 @@ Requires Node.js 22+.
 npm install
 npm run dev          # web app at http://localhost:3000
 npm run build        # production web build in dist/
-npm run deploy:web   # publish that build to GitHub Pages (gh-pages branch)
 ```
 
 ### Desktop apps
@@ -56,6 +55,9 @@ npm run install:mac  # copy it into /Applications
 npm run build:win    # Windows installers in release/ (Electron; can be built on macOS)
 npm run desktop      # run the Electron shell locally
 ```
+
+Every push to `main` rebuilds the web app and publishes it to GitHub Pages
+(`.github/workflows/pages.yml`).
 
 The macOS app is a small Swift/AppKit wrapper around a WebKit view (`macos/`); the Windows
 app uses Electron (`desktop/`). Both load the same web build from inside the app bundle.
