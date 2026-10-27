@@ -6,7 +6,7 @@ import { deleteElements, seedDoc } from './doc';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
 import { SignInNeeded } from './googleAuth';
-import { assembleWorkspace, INDEX_FILE, layoutWorkspace, parseIndex, type Layout } from './workspaceFiles';
+import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
 export interface State {
   doc: Doc;
@@ -142,7 +142,9 @@ export function openBoard(boardId: string) {
 // The document (which can hold images) lives in IndexedDB; the small view state goes to
 // localStorage synchronously so a reload always reopens the board you were on. The desktop
 // apps also keep the document as files in the user's storage folder (one per board, see
-// workspaceFiles.ts), which is the copy they load; IndexedDB stays as a backup.
+// workspaceFiles.ts), which is the copy they load; IndexedDB stays as a backup. Changes made to
+// those files outside Pinpad (renaming a folder in Google Drive, say) are picked up when Pinpad
+// comes back into focus.
 
 // Original name kept so saved view state still loads.
 const UI_KEY = 'milanote-clone:ui';
@@ -166,7 +168,7 @@ function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'colla
 }
 
 /** Where board files are saved: a storage folder (desktop apps), Google Drive, or nowhere. */
-type Backend = Pick<NativeStorage, 'read' | 'write'>;
+type Backend = Pick<NativeStorage, 'read' | 'write' | 'list'>;
 export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'browser' };
 
 /** Per device: whether this computer or browser keeps its boards in Google Drive. */
@@ -197,6 +199,11 @@ let writing: Promise<unknown> = Promise.resolve();
 /** The files as of the last successful save, so each save writes only what changed. */
 let onDisk: Layout = { files: new Map(), paths: new Map() };
 const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
+/** What the storage listed after the last read or save; anything else was changed outside Pinpad. */
+let seen: Map<string, number> | null = null;
+const snapshot = (listing: Listed[]) => new Map(listing.map((f) => [f.path, f.modified]));
+const unchanged = (listing: Listed[]) =>
+  !!seen && seen.size === listing.length && listing.every((f) => seen!.get(f.path) === f.modified);
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -234,6 +241,13 @@ function writeFiles(doc: Doc) {
       setState({
         storageError: err instanceof SignInNeeded ? err.message : `Couldn't save to ${placeName()}: ${errorText(err)}`,
       });
+      return;
+    }
+    try {
+      seen = snapshot(await target.list());
+    } catch {
+      // Without a fresh listing the next check just reads everything again.
+      seen = null;
     }
   });
   return writing;
@@ -244,19 +258,79 @@ export function retrySave() {
   return writeFiles(state.doc);
 }
 
-/** Loads the saved workspace; null when there's none there yet. */
-async function readFiles(from: Backend): Promise<{ doc: Doc; disk: Layout } | null> {
+/**
+ * Loads the saved workspace, following changes made to its files outside Pinpad; null when
+ * there's none there yet. Also remembers the listing, to notice the next outside change.
+ */
+async function readFiles(from: Backend, listing?: Listed[]): Promise<{ doc: Doc; disk: Layout } | null> {
+  listing ??= await from.list();
   const indexText = (await from.read([INDEX_FILE]))[INDEX_FILE];
+  seen = snapshot(listing);
   if (indexText == null) return null;
   const parsed = parseIndex(indexText);
   // The earlier single-file format: the next save splits it into board files.
   if ('doc' in parsed) return { doc: parsed.doc, disk: nothingOnDisk() };
-  const paths = Object.values(parsed.index.boards);
-  const texts = await from.read(paths);
-  const doc = assembleWorkspace(parsed.index, texts);
-  const files = new Map(paths.map((p) => [p, texts[p] ?? '']));
+  const { doc, files, paths } = await readWorkspace(parsed.index, listing, (p) => from.read(p));
   files.set(INDEX_FILE, indexText);
-  return { doc, disk: { files, paths: new Map(Object.entries(parsed.index.boards)) } };
+  return { doc, disk: { files, paths } };
+}
+
+const sameFiles = (a: Layout, b: Layout) =>
+  a.files.size === b.files.size && [...a.files].every(([path, text]) => b.files.get(path) === text);
+
+let syncing = false;
+let lastSync = 0;
+const SYNC_ERROR = "Couldn't read changes from";
+const clearSyncError = () => state.storageError?.startsWith(SYNC_ERROR) && setState({ storageError: null });
+
+/**
+ * Picks up changes made to the board files outside Pinpad since the last read or save: a
+ * folder or board renamed, moved or deleted in Google Drive or the storage folder, or boards
+ * edited on another computer. Runs when Pinpad comes back into focus and now and then while
+ * it's open; it waits while there are unsaved changes, so it never overwrites an edit.
+ */
+async function syncFromStorage() {
+  const from = backend;
+  if (!state || !from || fileBlocked || syncing || Date.now() - lastSync < 3000) return;
+  syncing = true;
+  lastSync = Date.now();
+  try {
+    await writing;
+    const before = state.doc;
+    const busy = () => from !== backend || state.doc !== before || !state.saved || persistTimer !== undefined || !!state.ui.editingId;
+    if (busy()) return;
+    const listing = await from.list();
+    if (unchanged(listing)) return void clearSyncError();
+    const found = await readFiles(from, listing);
+    clearSyncError();
+    if (busy()) {
+      seen = null;
+      return;
+    }
+    if (!found) {
+      // The whole workspace was deleted there: save it again from this copy.
+      onDisk = nothingOnDisk();
+      await writeFiles(state.doc);
+      return;
+    }
+    if (sameFiles(found.disk, onDisk)) return;
+    const { doc, disk } = found;
+    onDisk = disk;
+    past = [];
+    future = [];
+    pendingBase = null;
+    const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
+    const selection = state.ui.selection.filter((id) => doc.elements[id]);
+    setState({ doc, ui: { ...state.ui, boardId, selection, dropTarget: null }, storageError: null });
+    await save('doc', doc);
+    // Writes back what following the change needs, like the index's new folder names.
+    await writeFiles(doc);
+  } catch (err) {
+    // Offline or signed out: saving reports that, and the next check tries again.
+    if (!(err instanceof SignInNeeded)) setState({ storageError: `${SYNC_ERROR} ${placeName()}: ${errorText(err)}` });
+  } finally {
+    syncing = false;
+  }
 }
 
 async function flush() {
@@ -366,7 +440,9 @@ export async function initStore() {
   const flushPending = () => persistTimer !== undefined && flush();
   (window as Window & { __flushSave?: () => Promise<void> }).__flushSave = flushNow;
   window.addEventListener('pagehide', flushPending);
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushPending());
+  document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushPending() : syncFromStorage()));
+  window.addEventListener('focus', () => syncFromStorage());
+  window.setInterval(() => document.visibilityState === 'visible' && syncFromStorage(), 30_000);
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();
   // Workspaces saved before folders existed.
   doc.folders ??= {};

@@ -9,7 +9,7 @@
 
 import { accessToken, dropToken } from './googleAuth';
 import type { StorageBatch } from './native';
-import { INDEX_FILE } from './workspaceFiles';
+import { INDEX_FILE, type Listed } from './workspaceFiles';
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -22,6 +22,7 @@ interface DriveFile {
   name: string;
   mimeType: string;
   parents?: string[];
+  modifiedTime?: string;
 }
 
 async function drive(url: string, init: RequestInit = {}, retried = false): Promise<Response> {
@@ -53,7 +54,7 @@ async function listAll(query: string) {
   const files: DriveFile[] = [];
   let page = '';
   do {
-    const url = `${API}?q=${encodeURIComponent(query)}&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,parents)${page ? `&pageToken=${page}` : ''}`;
+    const url = `${API}?q=${encodeURIComponent(query)}&spaces=drive&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,parents,modifiedTime)${page ? `&pageToken=${page}` : ''}`;
     const body = await (await drive(url)).json();
     files.push(...body.files);
     page = body.nextPageToken ?? '';
@@ -78,6 +79,8 @@ async function create(meta: Record<string, unknown>, text?: string): Promise<str
 let rootId: string | null = null;
 /** Relative path (of files and folders, / separated) to Drive file id. */
 let ids = new Map<string, string>();
+/** The files and folders found by the last listing. */
+let listing: Listed[] = [];
 let loading: Promise<void> | null = null;
 
 /** Finds (or creates) the Pinpad folder and maps every file in it by path. */
@@ -94,9 +97,16 @@ async function load() {
     return upPath === null ? null : `${upPath}/${f.name}`;
   };
   ids = new Map();
+  listing = [];
   for (const f of files) {
     const path = f.id === rootId ? null : pathOf(f);
-    if (path !== null && !ids.has(path)) ids.set(path, f.id);
+    if (path === null || ids.has(path)) continue;
+    ids.set(path, f.id);
+    const dir = f.mimeType === FOLDER;
+    // A board file renamed in Drive may have lost its .json ending; it's still JSON.
+    if (dir || f.name.endsWith('.json') || f.mimeType === 'application/json') {
+      listing.push({ path, modified: dir ? 0 : Date.parse(f.modifiedTime ?? '') || 0, dir });
+    }
   }
 }
 
@@ -198,6 +208,13 @@ export const driveStorage = {
     for (const [path, text] of batch.write) await writeFile(path, text);
     for (const path of [...batch.remove, ...batch.trash]) await trash(path);
     return true;
+  },
+
+  /** Lists Drive afresh, so files renamed, moved or deleted there since are seen. */
+  async list(): Promise<Listed[]> {
+    driveStorage.reset();
+    await ready();
+    return listing;
   },
 
   async hasWorkspace() {

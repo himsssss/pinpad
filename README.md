@@ -36,6 +36,10 @@ Get the latest build from the [Releases](../../releases) page:
 - **Storage folder (desktop apps):** each board is saved as its own JSON file, with a folder
   per project (inside its sidebar folder), in Documents/Pinpad or any folder you choose under
   ⚙ → Storage location. A synced folder works as a backup.
+- **Google Drive:** the same files in "My Drive/Pinpad", on the website and the desktop apps.
+- **Two-way sync:** rename, move or delete a folder or board file in Finder, File Explorer or
+  Google Drive and Pinpad follows when it's back in focus (or within 30 seconds); boards
+  edited on another computer update too.
 
 ## Development
 

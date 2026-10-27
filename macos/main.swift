@@ -181,6 +181,7 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
         inspect: (folder) => call('inspect', folder),
         read: (paths) => call('read', paths),
         write: (batch) => call('write', batch),
+        list: () => call('list'),
         choose: () => call('choose'),
         use: (folder) => call('use', folder),
         reveal: () => call('reveal'),
@@ -232,6 +233,44 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
+  /// Every board file and folder in the storage folder with when it last changed, so the page
+  /// notices changes made outside Pinpad. Files iCloud Drive has offloaded show up as
+  /// ".Name.json.icloud"; they're listed as pending and asked to download. Bounded, in case the
+  /// folder is a big synced one.
+  nonisolated private static func list(_ folder: URL) -> [[String: Any]] {
+    let fm = FileManager.default
+    let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey]
+    guard let walker = fm.enumerator(at: folder, includingPropertiesForKeys: keys, options: [.skipsPackageDescendants])
+    else { return [] }
+    let root = folder.path.hasSuffix("/") ? folder.path : folder.path + "/"
+    var out: [[String: Any]] = []
+    for case let url as URL in walker {
+      if out.count >= 5000 { break }
+      guard url.path.hasPrefix(root) else { continue }
+      let values = try? url.resourceValues(forKeys: Set(keys))
+      let isDir = values?.isDirectory == true
+      if isDir && walker.level >= 9 { walker.skipDescendants() }
+      let name = url.lastPathComponent
+      let dir = String(url.deletingLastPathComponent().path.dropFirst(root.count))
+      let join = { (file: String) in dir.isEmpty ? file : "\(dir)/\(file)" }
+      let modified = (values?.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000
+      if name.hasPrefix(".") {
+        if isDir { walker.skipDescendants() }
+        guard name.hasSuffix(".json.icloud") else { continue }
+        let real = String(name.dropFirst().dropLast(".icloud".count))
+        try? fm.startDownloadingUbiquitousItem(at: url.deletingLastPathComponent().appendingPathComponent(real))
+        out.append(["path": join(real), "modified": modified, "pending": true])
+      } else if name.contains(":") {
+        continue
+      } else if isDir {
+        out.append(["path": join(name), "modified": 0, "dir": true])
+      } else if name.hasSuffix(".json") {
+        out.append(["path": join(name), "modified": modified])
+      }
+    }
+    return out
+  }
+
   /// Reads and writes run off the main thread, in order, so a large workspace (or macOS asking
   /// for folder access the first time) doesn't freeze the window.
   private let ioQueue = DispatchQueue(label: "pinpad.storage")
@@ -278,6 +317,9 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
         }
         return out
       }
+    case "list":
+      let folder = folder
+      onIOQueue(replyHandler) { Self.list(folder) }
     case "write":
       let batch = raw as? [String: Any] ?? [:]
       let folder = folder

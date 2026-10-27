@@ -1,3 +1,5 @@
+import type { Listed } from './workspaceFiles';
+
 /**
  * What the desktop apps add to the page as `window.pinpadNative` (macos/main.swift and
  * desktop/preload.cjs). The plain web build has none of it and falls back to browser-only
@@ -39,6 +41,8 @@ export interface NativeStorage {
   /** Each file's text, or null for a file that doesn't exist. */
   read(paths: string[]): Promise<Record<string, string | null>>;
   write(batch: StorageBatch): Promise<boolean>;
+  /** Every board file (.json) and folder in the storage folder, to notice changes made outside Pinpad. */
+  list(): Promise<Listed[]>;
   /** Shows the system folder picker; null when cancelled. */
   choose(): Promise<string | null>;
   /** Switches to a folder (null for the default) without moving any files. */

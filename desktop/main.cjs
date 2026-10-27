@@ -143,6 +143,32 @@ async function pruneEmpty(folder, file) {
   }
 }
 
+/**
+ * Every board file and folder in the storage folder with when it last changed, so the page
+ * notices changes made outside Pinpad. Bounded, in case the folder is a big synced one.
+ */
+async function listFolder(folder) {
+  const out = [];
+  const walk = async (dir, rel, depth) => {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (out.length >= 5000) return;
+      if (entry.name.startsWith('.') || /[\\:]/.test(entry.name)) continue;
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        out.push({ path: relPath, modified: 0, dir: true });
+        if (depth < 8) await walk(full, relPath, depth + 1);
+      } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        const stat = await fs.stat(full).catch(() => null);
+        if (stat) out.push({ path: relPath, modified: stat.mtimeMs });
+      }
+    }
+  };
+  await walk(folder, '', 0);
+  return out;
+}
+
 async function storage(event, op, arg) {
   const folder = await storageFolder();
   switch (op) {
@@ -158,6 +184,8 @@ async function storage(event, op, arg) {
       }
       return out;
     }
+    case 'list':
+      return listFolder(folder);
     case 'write': {
       // Each file is written beside itself and swapped in, so a crash never leaves half a board.
       for (const [rel, text] of arg.write) {
