@@ -927,3 +927,28 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 @media (max-width: 640px) {
   .menu.place-menu { width: min(310px, calc(100vw - 32px)); }
 }
+
+/* ---------- Show sidebar, at the bottom left while it's collapsed ---------- */
+
+.sidebar-expand {
+  position: absolute;
+  left: var(--gap);
+  bottom: var(--gap);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px 0 12px;
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  color: var(--slate);
+  font-weight: 500;
+}
+.sidebar-expand:hover { color: var(--ink); box-shadow: var(--shadow-3); }
+.phone-only { display: none; }
+@media (max-width: 640px) {
+  .sidebar-expand { display: none; }
+  .phone-only { display: grid; }
+}

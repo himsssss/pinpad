@@ -129,7 +129,8 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
         {!sidebarOpen && (
           <>
             <PlaceSwitcher compact onSettings={() => setStorageOpen(true)} />
-            <button className="icon-btn" onClick={() => setUI({ sidebarOpen: true })} aria-label="Show sidebar" title={`Show sidebar (${MOD}\\)`}>
+            {/* On phones the tools bar takes the bottom edge, so the button stays up here. */}
+            <button className="icon-btn phone-only" onClick={() => setUI({ sidebarOpen: true })} aria-label="Show sidebar" title={`Show sidebar (${MOD}\\)`}>
               <PanelLeftOpen size={18} />
             </button>
             {hasPath && <span className="topbar-sep" />}
@@ -182,6 +183,13 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
           </nav>
         )}
       </header>
+
+      {/* Where the sidebar's bottom row (Trash and collapse) was, so it comes back from the same spot. */}
+      {!sidebarOpen && (
+        <button className="sidebar-expand" onClick={() => setUI({ sidebarOpen: true })} title={`Show sidebar (${MOD}\\)`}>
+          <PanelLeftOpen size={16} /> Folders
+        </button>
+      )}
 
       <div className="topbar topbar-right">
         <button className="icon-btn" onClick={undo} disabled={!canUndo} aria-label="Undo" title={`Undo (${MOD}Z)`}><Undo2 size={18} /></button>
