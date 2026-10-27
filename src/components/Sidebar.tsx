@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Home, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
-import { getState, mutate, openBoard, setUI, useStore } from '../store';
+import { browse, getState, mutate, openBoard, setUI, useStore } from '../store';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD } from '../shortcuts';
 
-const BOARD_MIME = 'application/x-pinpad-board';
+export const BOARD_MIME = 'application/x-pinpad-board';
 const FOLDER_MIME = 'application/x-pinpad-folder';
 
 /** Adds a board to Home (right of everything already there), files it, and opens it. */
-function newProject(folderId?: string) {
+export function newProject(folderId?: string) {
   const { doc } = getState();
   const onHome = Object.values(doc.elements).filter((e) => e.boardId === doc.rootId && !e.columnId && e.type !== 'line');
   const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
@@ -27,7 +27,7 @@ function newProject(folderId?: string) {
   requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.board-heading')?.select());
 }
 
-function fileBoard(boardId: string, folderId: string) {
+export function fileBoard(boardId: string, folderId: string) {
   mutate((d) => {
     if (d.boards[boardId]) d.boards[boardId].folderId = folderId || undefined;
   });
@@ -41,6 +41,7 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [htmlDrop, setHtmlDrop] = useState<string | null>(null);
   const collapsedSections = useStore((s) => s.ui.collapsedSections);
+  const browsing = useStore((s) => s.ui.browsing);
 
   if (!open) return null;
 
@@ -51,16 +52,22 @@ export function Sidebar() {
         ? u.collapsedSections.filter((x) => x !== section)
         : [...u.collapsedSections, section],
     }));
+  // The arrow folds the list; the label opens the Projects page.
   const sectionToggle = (section: string, label: string, count: number) => (
-    <button
-      className="section-toggle"
-      aria-expanded={!isCollapsed(section)}
-      onClick={() => toggleSection(section)}
-    >
-      {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-      <span>{label}</span>
+    <span className="section-toggle">
+      <button
+        className="section-arrow"
+        aria-expanded={!isCollapsed(section)}
+        aria-label={isCollapsed(section) ? `Expand ${label}` : `Collapse ${label}`}
+        onClick={() => toggleSection(section)}
+      >
+        {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+      </button>
+      <button className={`section-label ${browsing === '' ? 'current' : ''}`} onClick={() => browse(null)} title={`Show all ${label.toLowerCase()}`}>
+        {label}
+      </button>
       {isCollapsed(section) && count > 0 && <span className="section-count">{count}</span>}
-    </button>
+    </span>
   );
 
   const openPath = new Set(boardPath(doc, boardId).map((b) => b.id));
@@ -134,7 +141,7 @@ export function Sidebar() {
   const projectRow = (b: Board) => (
     <button
       key={b.id}
-      className={`project-row ${b.id === boardId ? 'current' : openPath.has(b.id) ? 'in-path' : ''}`}
+      className={`project-row ${browsing === null && b.id === boardId ? 'current' : browsing === null && openPath.has(b.id) ? 'in-path' : ''}`}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(BOARD_MIME, b.id);
@@ -170,7 +177,7 @@ export function Sidebar() {
     return (
       <div key={f.id} className="folder">
         <div
-          className={`folder-row ${isDropping(f.id) ? 'drop-over' : ''}`}
+          className={`folder-row ${isDropping(f.id) ? 'drop-over' : ''} ${browsing === f.id ? 'current' : ''}`}
           draggable={renaming !== f.id}
           onDragStart={(e) => {
             e.stopPropagation();
@@ -202,7 +209,7 @@ export function Sidebar() {
               aria-label="Folder name"
             />
           ) : (
-            <span className="folder-name" onDoubleClick={() => setRenaming(f.id)} title="Double-click to rename">
+            <span className="folder-name" onClick={() => browse(f.id)} onDoubleClick={() => setRenaming(f.id)} title="Open folder · double-click to rename">
               {f.name}
             </span>
           )}
@@ -237,7 +244,7 @@ export function Sidebar() {
   return (
     <nav className="sidebar" aria-label="Folders and projects">
       <div className="sidebar-top">
-        <button className={`project-row home ${boardId === doc.rootId ? 'current' : ''}`} onClick={() => openBoard(doc.rootId)}>
+        <button className={`project-row home ${browsing === null && boardId === doc.rootId ? 'current' : ''}`} onClick={() => openBoard(doc.rootId)}>
           <span className="sidebar-icon"><Home size={15} /></span>
           <span className="project-name">Home</span>
         </button>

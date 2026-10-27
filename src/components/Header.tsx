@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Download, FolderCog, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Folder, Download, FolderCog, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
-import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
+import { browse, getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { parseWorkspace } from '../workspaceFiles';
 import { nativeStorage } from '../native';
 import { googleConfigured } from '../googleAuth';
@@ -50,6 +50,8 @@ export function Header({ onSearch }: { onSearch: () => void }) {
   const boardId = useStore((s) => s.ui.boardId);
   const boards = useStore((s) => s.doc.boards);
   const rootId = useStore((s) => s.doc.rootId);
+  const browsing = useStore((s) => s.ui.browsing);
+  const folders = useStore((s) => s.doc.folders);
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
   const saved = useStore((s) => s.saved);
@@ -77,6 +79,8 @@ export function Header({ onSearch }: { onSearch: () => void }) {
 
   const isRoot = boardId === rootId;
   const parents = path.slice(0, -1);
+  const folderTrail = [];
+  for (let f = browsing ? folders[browsing] : undefined; f; f = f.parentId ? folders[f.parentId] : undefined) folderTrail.unshift(f);
 
   // Miro-style floating panels over the canvas: board identity on the left, actions on the right.
   return (
@@ -87,29 +91,48 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           <span className="wordmark">Pinpad</span>
         </button>
         <span className="topbar-sep" />
-        <nav className="breadcrumbs" aria-label="Board path">
-          {parents.map((b, i) => (
-            <span key={b.id} className="crumb">
-              <button onClick={() => openBoard(b.id)}>{i === 0 ? 'Home' : b.title || 'Untitled'}</button>
-              <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
-            </span>
-          ))}
-          {isRoot ? (
-            <span className="board-heading static">Home</span>
-          ) : (
-            <>
-              {board && <BoardIcon icon={board.icon} color={board.color} size={20} />}
-              <input
-                className="board-heading"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                onBlur={commitTitle}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                aria-label="Board title"
-              />
-            </>
-          )}
-        </nav>
+        {browsing !== null ? (
+          <nav className="breadcrumbs" aria-label="Folder path">
+            {folderTrail.length > 0 && (
+              <span className="crumb">
+                <button onClick={() => browse(null)}>Projects</button>
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              </span>
+            )}
+            {folderTrail.slice(0, -1).map((f) => (
+              <span key={f.id} className="crumb">
+                <button onClick={() => browse(f.id)}>{f.name}</button>
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              </span>
+            ))}
+            {folderTrail.length > 0 && <Folder size={18} className="crumb-folder" aria-hidden="true" />}
+            <span className="board-heading static">{folderTrail.at(-1)?.name ?? 'Projects'}</span>
+          </nav>
+        ) : (
+          <nav className="breadcrumbs" aria-label="Board path">
+            {parents.map((b, i) => (
+              <span key={b.id} className="crumb">
+                <button onClick={() => openBoard(b.id)}>{i === 0 ? 'Home' : b.title || 'Untitled'}</button>
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              </span>
+            ))}
+            {isRoot ? (
+              <span className="board-heading static">Home</span>
+            ) : (
+              <>
+                {board && <BoardIcon icon={board.icon} color={board.color} size={20} />}
+                <input
+                  className="board-heading"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  onBlur={commitTitle}
+                  onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                  aria-label="Board title"
+                />
+              </>
+            )}
+          </nav>
+        )}
         {storageError ? (
           <button className="save-status error" onClick={() => setStorageOpen(true)} title={storageError} aria-label="Storage problem" />
         ) : (

@@ -142,4 +142,6 @@ export interface UI {
   editPoint: { x: number; y: number } | null;
   views: Record<string, View>;
   dropTarget: DropTarget | null;
+  /** The Projects page, shown instead of a board: the folder it's showing ('' for the top level). */
+  browsing: string | null;
 }

@@ -135,7 +135,12 @@ export function startEditing(id: string, point: { x: number; y: number } | null 
 }
 
 export function openBoard(boardId: string) {
-  setUI({ boardId, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null, playingId: null });
+  setUI({ boardId, browsing: null, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null, playingId: null });
+}
+
+/** Shows the Projects page at a sidebar folder (null for all projects). */
+export function browse(folderId: string | null) {
+  setUI({ browsing: folderId ?? '', selection: [], editingId: null, editPoint: null, draw: null, playingId: null });
 }
 
 // ---- persistence ----
@@ -460,6 +465,7 @@ export async function initStore() {
       editPoint: null,
       views: savedUI?.views ?? {},
       dropTarget: null,
+      browsing: null,
     },
     canUndo: false,
     canRedo: false,

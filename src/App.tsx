@@ -6,13 +6,17 @@ import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { SearchDialog } from './components/SearchDialog';
+import { ProjectsPage } from './components/ProjectsPage';
 
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
 
 export function App() {
   const [searching, setSearching] = useState(false);
-  const boardTitle = useStore((s) => (s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title));
+  const browsing = useStore((s) => s.ui.browsing);
+  const boardTitle = useStore((s) =>
+    s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
+  );
   const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
 
   // The macOS app shows this as its window title.
@@ -25,6 +29,8 @@ export function App() {
       const mod = e.metaKey || e.ctrlKey;
       const { ui, doc } = getState();
       const typing = isTypingTarget(e.target);
+      // Board shortcuts don't apply on the Projects page.
+      if (ui.browsing !== null && !(mod && ['\\', 'k', 'z', 'y'].includes(e.key.toLowerCase()))) return;
 
       if (mod && e.key === '\\') {
         e.preventDefault();
@@ -115,10 +121,10 @@ export function App() {
   return (
     // The canvas fills the window; header, folders and tools float over it in rounded panels.
     <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
-      <Canvas />
+      {browsing === null ? <Canvas /> : <ProjectsPage folderId={browsing || null} />}
       <Header onSearch={() => setSearching(true)} />
       <Sidebar />
-      <Toolbar />
+      {browsing === null && <Toolbar />}
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
     </div>
   );
