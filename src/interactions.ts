@@ -44,6 +44,30 @@ export function worldRect(id: string) {
 
 const DRAG_THRESHOLD = 4;
 
+/**
+ * Follows a press until it ends: pointerup, pointercancel (the OS or a native drag took
+ * over), or a move with no button held (the release happened where we couldn't see it,
+ * such as over an embedded player or outside the window). Without the last two, a lost
+ * release leaves the gesture running and the next card follows the mouse.
+ */
+export function trackPointer(onMove: (ev: PointerEvent) => void, onEnd?: (ev: PointerEvent, cancelled: boolean) => void) {
+  const end = (ev: PointerEvent, cancelled: boolean) => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    window.removeEventListener('pointercancel', cancel);
+    window.removeEventListener('blur', blur);
+    onEnd?.(ev, cancelled);
+  };
+  const move = (ev: PointerEvent) => (ev.buttons === 0 ? end(ev, false) : onMove(ev));
+  const up = (ev: PointerEvent) => end(ev, false);
+  const cancel = (ev: PointerEvent) => end(ev, true);
+  const blur = () => end(new PointerEvent('pointercancel'), true);
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+  window.addEventListener('pointercancel', cancel);
+  window.addEventListener('blur', blur);
+}
+
 /** The card (not a line) under a screen point, skipping the given ids. */
 export function cardUnder(x: number, y: number, exclude: (string | undefined)[] = []) {
   for (const node of document.elementsFromPoint(x, y)) {
@@ -89,21 +113,18 @@ export function beginConnect(e: React.PointerEvent, fromId: string) {
       l.end = { x: w.x, y: w.y };
     }, 'pending');
   };
-  const up = (ev: PointerEvent) => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
+  const up = (ev: PointerEvent, cancelled: boolean) => {
     document.body.classList.remove('is-connecting');
     const attachTo = target;
     highlight(undefined);
-    if (!attachTo && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD * 2) {
+    if (cancelled || (!attachTo && Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD * 2)) {
       mutate((d) => { delete d.elements[line.id]; }, 'none');
       return;
     }
     if (attachTo) mutate((d) => { (d.elements[line.id] as LineEl).end.elId = attachTo; }, 'pending');
     select([line.id]);
   };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  trackPointer(move, up);
 }
 
 /**
@@ -195,22 +216,22 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
     updateDropTarget(ev, ids);
   };
 
-  const up = (ev: PointerEvent) => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
+  const up = (ev: PointerEvent, cancelled: boolean) => {
     document.body.classList.remove('is-dragging');
     if (!dragging) {
+      if (cancelled) return;
       if (ev.shiftKey) {
         const sel = getState().ui.selection;
         select(sel.includes(id) ? sel.filter((s) => s !== id) : [...sel, id]);
       } else onClick(ev);
       return;
     }
-    finishDrop(ids, origins);
+    // A cancelled drag leaves the cards where they are; it never files or trashes them.
+    if (cancelled) setUI({ dropTarget: null });
+    else finishDrop(ids, origins);
   };
 
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  trackPointer(move, up);
 }
 
 function updateDropTarget(ev: PointerEvent, ids: string[]) {
@@ -306,10 +327,5 @@ export function beginResize(e: React.PointerEvent, id: string, minW = 160) {
       d.elements[id].w = w;
     }, 'pending');
   };
-  const up = () => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-  };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  trackPointer(move);
 }

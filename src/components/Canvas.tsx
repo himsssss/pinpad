@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, Maximize } from 'lucide-react';
 import type { ElType } from '../types';
 import { DEFAULT_VIEW, checkpoint, currentView, getState, select, setView, useStore } from '../store';
-import { registerCanvas, screenToWorld } from '../interactions';
+import { registerCanvas, screenToWorld, trackPointer } from '../interactions';
 import { addElement, addImages } from '../actions';
 import { readImage } from '../images';
 import { addStroke, eraseAt, strokePath } from '../drawing';
@@ -68,20 +68,9 @@ export function Canvas() {
     };
   }, []);
 
-  /** Follows the pointer until it's released. */
-  const track = (onMove: (ev: PointerEvent) => void, onUp?: (ev: PointerEvent) => void) => {
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', up);
-      onUp?.(ev);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', up);
-  };
-
   const pan = (e: React.PointerEvent) => {
     const v0 = currentView();
-    track((ev) => setView({ ...v0, x: v0.x + ev.clientX - e.clientX, y: v0.y + ev.clientY - e.clientY }));
+    trackPointer((ev) => setView({ ...v0, x: v0.x + ev.clientX - e.clientX, y: v0.y + ev.clientY - e.clientY }));
   };
 
   const onDrawPointerDown = (e: React.PointerEvent) => {
@@ -97,13 +86,13 @@ export function Canvas() {
         eraseAt(p.x, p.y, 8 / zoom);
       };
       erase(e);
-      track(erase);
+      trackPointer(erase);
       return;
     }
     const p0 = screenToWorld(e.clientX, e.clientY);
     const pts = [p0.x, p0.y];
     setLiveStroke([...pts]);
-    track(
+    trackPointer(
       (ev) => {
         const p = screenToWorld(ev.clientX, ev.clientY);
         if (Math.hypot(p.x - pts[pts.length - 2], p.y - pts[pts.length - 1]) < 1.5 / zoom) return;
@@ -146,14 +135,10 @@ export function Canvas() {
         .map((n) => n.dataset.elId!);
       select([...new Set([...base, ...hit])]);
     };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+    trackPointer(move, (_ev, cancelled) => {
       setMarquee(null);
-      if (!moved) select(base);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+      if (!moved && !cancelled) select(base);
+    });
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {

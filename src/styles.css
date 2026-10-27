@@ -310,6 +310,8 @@ input { font: inherit; color: inherit; }
 .canvas.panning, .canvas.panning * { cursor: grab !important; }
 .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select: none; }
+/* Players would swallow the move and release events of a drag passing over them. */
+body.is-dragging iframe, body.is-connecting iframe { pointer-events: none; }
 .marquee { position: absolute; border: 1px solid var(--blue); background: var(--blue-wash); border-radius: 2px; pointer-events: none; }
 .empty-hint { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; pointer-events: none; }
 .empty-hint p { font-size: 36px; font-weight: 500; letter-spacing: -0.5px; line-height: 1.2; margin: 0 0 8px; }
