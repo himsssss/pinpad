@@ -190,7 +190,9 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 <DriveIcon />
                 <div>
                   <div className="storage-folder">My Drive › Pinpad</div>
-                  <div className="storage-file">{account ? `Signed in as ${account}` : 'Signed in'}</div>
+                  <div className="storage-file">
+                    {storageError ? `Last signed in as ${account ?? 'your Google account'}` : account ? `Signed in as ${account}` : 'Signed in'}
+                  </div>
                 </div>
               </div>
             )}

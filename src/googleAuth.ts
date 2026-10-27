@@ -55,12 +55,43 @@ const native = () => window.pinpadNative?.google;
 
 export const googleConfigured = () => (native() ? !!DESKTOP_CLIENT.clientId : !!WEB_CLIENT_ID);
 
-let token: { value: string; expiresAt: number } | null = null;
+/**
+ * On the website the access token is also kept for the tab's session, so reloading the page
+ * within the hour doesn't ask for Google again. (The desktop apps renew it silently instead.)
+ */
+const TOKEN_KEY = 'pinpad:google-token';
+
+function savedToken(): { value: string; expiresAt: number } | null {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(TOKEN_KEY) ?? 'null');
+    return saved && Date.now() < saved.expiresAt ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+let token = savedToken();
 
 function keep(t: GoogleToken) {
   // Renew a minute early so a request never goes out with a token about to lapse.
   token = { value: t.accessToken, expiresAt: Date.now() + (Number(t.expiresIn) - 60) * 1000 };
+  if (!native()) {
+    try {
+      sessionStorage.setItem(TOKEN_KEY, JSON.stringify(token));
+    } catch {
+      // Without session storage a reload just asks to sign in again.
+    }
+  }
   return token.value;
+}
+
+function forgetToken() {
+  token = null;
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // Nothing saved to forget.
+  }
 }
 
 let gisLoad: Promise<void> | null = null;
@@ -119,12 +150,12 @@ export async function accessToken() {
 
 /** Forgets the access token after Google rejected it, so the next call renews it. */
 export function dropToken() {
-  token = null;
+  forgetToken();
 }
 
 export async function signOut() {
   const current = token;
-  token = null;
+  forgetToken();
   try {
     localStorage.removeItem(ACCOUNT_KEY);
   } catch {
