@@ -3,6 +3,7 @@ import { produce, type Draft } from 'immer';
 import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { deleteElements, seedDoc } from './doc';
+import { purgeOldTrash } from './projectActions';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
 import { preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
@@ -514,6 +515,7 @@ export async function initStore() {
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();
   // Workspaces saved before folders existed.
   doc.folders ??= {};
+  purgeOldTrash(doc);
   const boardId = savedUI?.boardId && doc.boards[savedUI.boardId] ? savedUI.boardId : doc.rootId;
   state = {
     doc,

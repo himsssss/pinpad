@@ -7,6 +7,8 @@ import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { SearchDialog } from './components/SearchDialog';
 import { ProjectsPage } from './components/ProjectsPage';
+import { TRASH, TrashPage } from './components/TrashPage';
+import { ConfirmDialog } from './components/ConfirmDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
 import { ContextMenu } from './components/ContextMenu';
@@ -20,7 +22,7 @@ export function App() {
   const [shortcuts, setShortcuts] = useState(false);
   const browsing = useStore((s) => s.ui.browsing);
   const boardTitle = useStore((s) =>
-    s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? s.storageName ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
+    s.ui.browsing === TRASH ? 'Trash' : s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? s.storageName ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
   );
   const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
 
@@ -143,7 +145,7 @@ export function App() {
   return (
     // The canvas fills the window; header, folders and tools float over it in rounded panels.
     <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
-      {browsing === null ? <Canvas /> : <ProjectsPage folderId={browsing || null} />}
+      {browsing === null ? <Canvas /> : browsing === TRASH ? <TrashPage /> : <ProjectsPage folderId={browsing || null} />}
       <Header onSearch={() => setSearching(true)} onShortcuts={() => setShortcuts(true)} />
       {sidebarOpen && <div className="sidebar-backdrop" onPointerDown={() => setUI({ sidebarOpen: false })} />}
       <Sidebar />
@@ -151,6 +153,7 @@ export function App() {
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
       <CardMenu />
       <ContextMenu />
+      <ConfirmDialog />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>
   );

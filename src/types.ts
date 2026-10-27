@@ -105,6 +105,22 @@ export interface Doc {
   boards: Record<string, Board>;
   elements: Record<string, El>;
   folders: Record<string, Folder>;
+  /** Deleted folders and projects, restorable for 30 days. */
+  trash?: TrashEntry[];
+}
+
+/** A deleted folder (with everything in it) or project, kept so it can be put back. */
+export interface TrashEntry {
+  id: string;
+  kind: 'folder' | 'project';
+  name: string;
+  deletedAt: number;
+  /** The folder (and its subfolders) as they were. */
+  folders: Folder[];
+  /** Every board inside, projects first. */
+  boards: Board[];
+  /** Every card on those boards, plus the project cards that sat on Home. */
+  elements: El[];
 }
 
 export interface View {

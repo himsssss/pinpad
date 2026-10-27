@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Folder, Download, FileImage, FileText, FolderCog, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import { exportBoardImage, exportBoardPdf } from '../exportBoard';
+import { TRASH } from './TrashPage';
 import type { Doc } from '../types';
 import { browse, getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { parseWorkspace } from '../workspaceFiles';
@@ -129,8 +130,14 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
                 <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
               </span>
             ))}
+            {browsing === TRASH && (
+              <span className="crumb">
+                <button onClick={() => browse(null)}>{rootName}</button>
+                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
+              </span>
+            )}
             {folderTrail.length > 0 && <Folder size={18} className="crumb-folder" aria-hidden="true" />}
-            <span className="board-heading static">{folderTrail.at(-1)?.name ?? rootName}</span>
+            <span className="board-heading static">{browsing === TRASH ? 'Trash' : folderTrail.at(-1)?.name ?? rootName}</span>
           </nav>
         ) : (
           <nav className="breadcrumbs" aria-label="Board path">

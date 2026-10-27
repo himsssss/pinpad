@@ -6,8 +6,39 @@ import {
 import { browse, getState, openBoard, setUI } from '../store';
 import type { Renaming } from '../types';
 import {
-  createFolder, deleteFolder, deleteProject, duplicateProject, fileBoard, folderChoices, moveFolder, newProject,
+  createFolder, duplicateProject, fileBoard, folderChoices, folderContents, moveFolder, newProject, trashFolder, trashProject,
 } from '../projectActions';
+import { askConfirm } from './ConfirmDialog';
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Warns, then moves a folder and everything in it to the Trash. */
+export async function confirmTrashFolder(folderId: string) {
+  const folder = getState().doc.folders[folderId];
+  if (!folder) return;
+  const { projects, folders } = folderContents(folderId);
+  const holds = [projects && plural(projects, 'project', 'projects'), folders && plural(folders, 'folder', 'folders')].filter(Boolean).join(' and ');
+  const ok = await askConfirm({
+    title: `Delete “${folder.name}”?`,
+    message: `${holds ? `It holds ${holds}. The folder and everything in it go` : 'The folder goes'} to the Trash, where you can restore it for 30 days.`,
+    confirm: 'Move to Trash',
+    danger: true,
+  });
+  if (ok) trashFolder(folderId);
+}
+
+/** Warns, then moves a project with all its boards and cards to the Trash. */
+export async function confirmTrashProject(boardId: string) {
+  const board = getState().doc.boards[boardId];
+  if (!board) return;
+  const ok = await askConfirm({
+    title: `Delete “${board.title || 'Untitled'}”?`,
+    message: 'The project and all its boards and cards go to the Trash, where you can restore them for 30 days.',
+    confirm: 'Move to Trash',
+    danger: true,
+  });
+  if (ok) trashProject(boardId);
+}
 
 export type MenuItem =
   | { label: string; icon?: LucideIcon; onSelect?: () => void; danger?: boolean; items?: MenuItem[]; indent?: number; current?: boolean }
@@ -39,7 +70,7 @@ export function folderMenu(folderId: string, where: Renaming['where']): MenuItem
     { label: 'New folder inside', icon: FolderPlus, onSelect: () => createFolder(folderId, where) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(folder.parentId, folderId, (to) => moveFolder(folderId, to || undefined)) },
     'sep',
-    { label: 'Delete folder', icon: Trash2, danger: true, onSelect: () => deleteFolder(folderId) },
+    { label: 'Delete folder', icon: Trash2, danger: true, onSelect: () => confirmTrashFolder(folderId) },
   ];
 }
 
@@ -53,7 +84,7 @@ export function projectMenu(boardId: string, where: Renaming['where']): MenuItem
     { label: 'Duplicate', icon: Copy, onSelect: () => duplicateProject(boardId) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(board.folderId, undefined, (to) => fileBoard(boardId, to)) },
     'sep',
-    { label: 'Delete project', icon: Trash2, danger: true, onSelect: () => deleteProject(boardId) },
+    { label: 'Delete project', icon: Trash2, danger: true, onSelect: () => confirmTrashProject(boardId) },
   ];
 }
 

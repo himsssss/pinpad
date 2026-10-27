@@ -28,6 +28,8 @@ export function parseWorkspace(text: string): Doc {
 }
 
 export const INDEX_FILE = 'Pinpad Workspace.json';
+/** Deleted folders and projects (see TrashEntry), kept in one file beside the index. */
+export const TRASH_FILE = 'Pinpad Trash.json';
 const FORMAT = 2;
 
 interface Index {
@@ -96,6 +98,7 @@ function namer(): Take {
     return join(dir, `${name}${ext}`);
   };
   take('', 'Pinpad Workspace', '.json');
+  take('', 'Pinpad Trash', '.json');
   return take;
 }
 
@@ -160,6 +163,8 @@ export function layoutWorkspace(doc: Doc): Layout {
     const file: BoardFile = { pinpad: FORMAT, board: doc.boards[id], elements: elementsByBoard.get(id) ?? [] };
     files.set(path, JSON.stringify(file, null, 2));
   }
+  // Once the Trash has been used the file stays, so emptying it is saved too.
+  if (doc.trash) files.set(TRASH_FILE, JSON.stringify(doc.trash));
   const index: Index = { pinpad: FORMAT, rootId: doc.rootId, folders: doc.folders, boards: Object.fromEntries(paths) };
   files.set(INDEX_FILE, JSON.stringify(index, null, 2));
   return { files, paths };
@@ -207,7 +212,7 @@ export async function readWorkspace(
   };
 
   const indexed = Object.entries(index.boards);
-  const texts = await read(indexed.map(([, path]) => path));
+  const texts = await read([...indexed.map(([, path]) => path), TRASH_FILE]);
   for (const [id, path] of indexed) {
     const text = texts[path];
     if (text != null) consider(path, text, id);
@@ -215,7 +220,7 @@ export async function readWorkspace(
   let missing = indexed.filter(([id]) => !found.has(id));
   if (missing.length && listing) {
     const tried = new Set(indexed.filter(([, path]) => texts[path] != null).map(([, path]) => path));
-    const others = listing.filter((f) => !f.dir && !f.pending && f.path !== INDEX_FILE && !tried.has(f.path)).map((f) => f.path);
+    const others = listing.filter((f) => !f.dir && !f.pending && f.path !== INDEX_FILE && f.path !== TRASH_FILE && !tried.has(f.path)).map((f) => f.path);
     const more = others.length ? await read(others) : {};
     for (const path of others) {
       const text = more[path];
@@ -230,6 +235,12 @@ export async function readWorkspace(
   }
 
   const doc: Doc = { rootId: index.rootId, boards: {}, elements: {}, folders: index.folders ?? {} };
+  try {
+    const trash = JSON.parse(texts[TRASH_FILE] ?? '[]');
+    if (Array.isArray(trash) && texts[TRASH_FILE] != null) doc.trash = trash;
+  } catch {
+    // An unreadable Trash file only loses what was in the Trash.
+  }
   for (const [id, { file }] of found) {
     doc.boards[id] = { ...file.board, id };
     for (const el of file.elements) doc.elements[el.id] = { ...el, boardId: id };
@@ -238,6 +249,7 @@ export async function readWorkspace(
 
   const paths = new Map([...found].map(([id, f]) => [id, f.path]));
   const files = new Map([...found].map(([, f]) => [f.path, f.text]));
+  if (texts[TRASH_FILE] != null) files.set(TRASH_FILE, texts[TRASH_FILE]!);
   if (listing) followRenames(doc, index, paths, listing);
   return { doc, files, paths };
 }

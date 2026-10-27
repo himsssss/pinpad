@@ -7,9 +7,10 @@ import { boardPath, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD } from '../shortcuts';
 import {
-  BOARD_MIME, FOLDER_MIME, createFolder, deleteFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject,
+  BOARD_MIME, FOLDER_MIME, createFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject,
 } from '../projectActions';
-import { folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
+import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
+import { TRASH } from './TrashPage';
 
 /** Inline name editor for a folder or project, committed on Enter or blur. */
 export function RenameInput({ value, label, onCommit }: { value: string; label: string; onCommit: (value: string) => void }) {
@@ -46,6 +47,7 @@ export function Sidebar() {
   const browsing = useStore((s) => s.ui.browsing);
   // The list is named after where it's saved: the Drive folder or the folder on this computer.
   const storageName = useStore((s) => s.storageName);
+  const trashCount = useStore((s) => s.doc.trash?.length ?? 0);
 
   if (!open) return null;
 
@@ -184,8 +186,8 @@ export function Sidebar() {
             </button>
             <button
               aria-label={`Delete folder ${f.name}`}
-              title="Delete folder (its subfolders and projects move up a level)"
-              onClick={() => deleteFolder(f.id)}
+              title="Delete folder (moves it to the Trash)"
+              onClick={() => confirmTrashFolder(f.id)}
             >
               <Trash2 size={13} />
             </button>
@@ -234,6 +236,11 @@ export function Sidebar() {
           </>
         )}
       </div>
+      <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
+        <span className="sidebar-icon"><Trash2 size={15} /></span>
+        <span className="project-name">Trash</span>
+        {trashCount > 0 && <span className="folder-count">{trashCount}</span>}
+      </button>
     </nav>
   );
 }

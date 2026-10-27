@@ -4,8 +4,9 @@
  */
 
 import { getState, mutate, openBoard, setUI } from './store';
+import { current, isDraft } from 'immer';
 import { cloneElements, createElement, deleteElements, maxZ, uid } from './doc';
-import type { Doc, Renaming } from './types';
+import type { Doc, El, Renaming, TrashEntry } from './types';
 
 export const BOARD_MIME = 'application/x-pinpad-board';
 export const FOLDER_MIME = 'application/x-pinpad-folder';
@@ -74,18 +75,6 @@ export function moveFolder(folderId: string, parentId?: string) {
   });
 }
 
-/** Deleting a folder moves its subfolders and projects up one level. */
-export function deleteFolder(folderId: string) {
-  const { ui } = getState();
-  mutate((d) => {
-    const parentId = d.folders[folderId].parentId;
-    for (const f of Object.values(d.folders)) if (f.parentId === folderId) f.parentId = parentId;
-    for (const b of Object.values(d.boards)) if (b.folderId === folderId) b.folderId = parentId;
-    delete d.folders[folderId];
-  });
-  if (ui.browsing === folderId) setUI({ browsing: '' });
-}
-
 export function renameFolder(folderId: string, value: string) {
   const name = value.trim() || 'Untitled folder';
   if (name !== getState().doc.folders[folderId]?.name) mutate((d) => { d.folders[folderId].name = name; });
@@ -108,13 +97,119 @@ export function duplicateProject(boardId: string) {
   });
 }
 
-/** Deletes a project and everything in it, after asking (it can be undone). */
-export function deleteProject(boardId: string) {
+// ---- Trash ----
+
+const TRASH_DAYS = 30;
+
+/** A folder and every folder inside it. */
+function folderTree(doc: Doc, folderId: string) {
+  return Object.values(doc.folders).filter((f) => isWithin(doc, f.id, folderId));
+}
+
+/** Projects filed in any of these folders. */
+const projectsIn = (doc: Doc, folderIds: Set<string>) =>
+  Object.values(doc.elements)
+    .filter((e) => e.type === 'board' && e.boardId === doc.rootId && doc.boards[e.targetId])
+    .map((e) => doc.boards[(e as { targetId: string }).targetId])
+    .filter((b) => b.folderId && folderIds.has(b.folderId));
+
+/** What a folder holds, for the warning: its projects (including in subfolders). */
+export function folderContents(folderId: string) {
   const { doc } = getState();
-  const card = homeCard(doc, boardId);
-  const title = doc.boards[boardId]?.title || 'Untitled';
-  if (!card || !confirm(`Delete “${title}” and everything in it? You can undo this.`)) return;
-  mutate((d) => deleteElements(d, [card.id]));
+  const folders = folderTree(doc, folderId);
+  return { folders: folders.length - 1, projects: projectsIn(doc, new Set(folders.map((f) => f.id))).length };
+}
+
+/** Moves projects (with all their boards and cards) and folders out of the workspace into the Trash. */
+function toTrash(kind: TrashEntry['kind'], name: string, folderIds: string[], projectIds: string[]) {
+  mutate((d) => {
+    const plain = <T>(v: T): T => structuredClone(isDraft(v) ? current(v) : v);
+    // Every board under the projects, and every card on them, plus the cards on Home that open them.
+    const boardIds = new Set<string>();
+    for (const b of Object.values(d.boards)) {
+      for (let cur: string | null = b.id; cur; cur = d.boards[cur]?.parentId ?? null) {
+        if (projectIds.includes(cur)) {
+          boardIds.add(b.id);
+          break;
+        }
+      }
+    }
+    const cards = Object.values(d.elements).filter((e) => e.type === 'board' && e.boardId === d.rootId && projectIds.includes(e.targetId));
+    const elements = Object.values(d.elements).filter((e) => boardIds.has(e.boardId));
+    const entry: TrashEntry = {
+      id: uid(),
+      kind,
+      name,
+      deletedAt: Date.now(),
+      folders: folderIds.map((id) => plain(d.folders[id])),
+      boards: [...projectIds, ...[...boardIds].filter((id) => !projectIds.includes(id))].map((id) => plain(d.boards[id])),
+      elements: [...cards, ...elements].map(plain),
+    };
+    deleteElements(d, cards.map((c) => c.id));
+    for (const id of folderIds) delete d.folders[id];
+    d.trash = [entry, ...(d.trash ?? [])];
+  });
+}
+
+/** Moves a folder, its subfolders and every project in them to the Trash. */
+export function trashFolder(folderId: string) {
+  const { doc, ui } = getState();
+  const folder = doc.folders[folderId];
+  if (!folder) return;
+  const folders = folderTree(doc, folderId).map((f) => f.id);
+  const projectIds = projectsIn(doc, new Set(folders)).map((b) => b.id);
+  const parent = folder.parentId;
+  toTrash('folder', folder.name, folders, projectIds);
+  // Showing the deleted folder (or one inside it): go up to where it was.
+  if (ui.browsing && folders.includes(ui.browsing)) setUI({ browsing: parent ?? '' });
+}
+
+/** Moves a project with all its boards and cards to the Trash. */
+export function trashProject(boardId: string) {
+  const { doc, ui } = getState();
+  const board = doc.boards[boardId];
+  if (!board || !homeCard(doc, boardId)) return;
+  toTrash('project', board.title || 'Untitled', [], [boardId]);
+  if (!getState().doc.boards[ui.boardId]) openBoard(getState().doc.rootId);
+}
+
+/** Puts something back where it was (at the top level if its folder is gone). */
+export function restoreFromTrash(entryId: string) {
+  mutate((d) => {
+    const entry = d.trash?.find((t) => t.id === entryId);
+    if (!entry) return;
+    const restored = new Set(entry.folders.map((f) => f.id));
+    for (const f of entry.folders) {
+      d.folders[f.id] = { ...f };
+      if (f.parentId && !d.folders[f.parentId] && !restored.has(f.parentId)) delete d.folders[f.id].parentId;
+    }
+    for (const b of entry.boards) {
+      d.boards[b.id] = { ...b };
+      if (b.folderId && !d.folders[b.folderId]) delete d.boards[b.id].folderId;
+    }
+    let z = maxZ(d);
+    for (const el of entry.elements) d.elements[el.id] = { ...el, ...(el.boardId === d.rootId ? { z: ++z } : {}) } as El;
+    d.trash = d.trash!.filter((t) => t.id !== entryId);
+  });
+}
+
+/** Removes one item from the Trash for good. */
+export function deleteForever(entryId: string) {
+  mutate((d) => {
+    d.trash = (d.trash ?? []).filter((t) => t.id !== entryId);
+  });
+}
+
+export function emptyTrash() {
+  mutate((d) => {
+    d.trash = [];
+  });
+}
+
+/** Drops Trash items older than 30 days. */
+export function purgeOldTrash(doc: Doc) {
+  const cutoff = Date.now() - TRASH_DAYS * 24 * 60 * 60 * 1000;
+  if (doc.trash?.some((t) => t.deletedAt < cutoff)) doc.trash = doc.trash.filter((t) => t.deletedAt >= cutoff);
 }
 
 /** Folders to offer under "Move to", indented by depth, leaving out `exclude` and its subfolders. */

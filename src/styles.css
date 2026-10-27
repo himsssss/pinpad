@@ -811,3 +811,37 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .menu .menu-back { color: var(--steel); font-weight: 500; }
 .project-row.renaming { display: flex; align-items: center; gap: 8px; }
 .folder-tile .folder-rename, .project-tile .folder-rename { margin: 0; min-width: 0; width: 100%; }
+
+/* ---------- warning pop-up ---------- */
+
+.confirm-backdrop { z-index: 300; }
+.dialog.confirm-dialog { width: min(420px, calc(100vw - 32px)); }
+.confirm-dialog h2 { margin: 12px 0 6px; font-size: 18px; line-height: 1.3; }
+.confirm-dialog .dialog-text { margin: 0; }
+.confirm-dialog .dialog-actions { margin-top: 20px; }
+.confirm-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--yellow-light); color: var(--yellow-dark); }
+.confirm-icon.danger { background: var(--danger-light); color: var(--danger); }
+.btn-primary.danger { background: var(--danger); }
+.btn-primary.danger:hover { background: #c9363b; }
+.btn-secondary.danger { gap: 6px; }
+.icon-btn.danger:hover:not(:disabled) { background: var(--danger-light); color: var(--danger); }
+
+/* ---------- Trash ---------- */
+
+.sidebar { display: flex; flex-direction: column; }
+.trash-row { margin-top: auto; flex-shrink: 0; }
+.trash-row .folder-count { margin-left: auto; }
+.trash-note { margin: 0 0 16px; color: var(--steel); font-size: 13px; }
+.trash-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 760px; }
+.trash-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-lg); background: var(--surface-soft); box-shadow: inset 0 0 0 1px var(--hairline-soft); }
+.trash-icon { width: 36px; height: 36px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-md); background: var(--panel); color: var(--slate); }
+.trash-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trash-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trash-meta { font-size: 12px; color: var(--stone); }
+.trash-item .btn-secondary { gap: 6px; height: 32px; padding: 0 12px; font-size: 13px; }
+.trash-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 64px 0; color: var(--stone); }
+.trash-empty p { margin: 0 0 8px; }
+@media (max-width: 640px) {
+  .trash-item { flex-wrap: wrap; }
+  .trash-text { flex-basis: calc(100% - 48px); }
+}
