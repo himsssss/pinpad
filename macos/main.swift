@@ -164,6 +164,124 @@ final class PageFetcher: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
+/// Keeps the workspace as a JSON file in a folder the user picks (Documents/Pinpad by
+/// default), so boards can live in a synced or backed-up folder. Exposed to the page as
+/// `window.pinpadNative.storage`; the Windows app's preload offers the same calls.
+@MainActor
+final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
+  static let script = """
+    (() => {
+      const call = (op, arg) => window.webkit.messageHandlers.storage.postMessage({ op, arg: arg ?? null });
+      window.pinpadNative = Object.assign(window.pinpadNative || {}, { storage: {
+        location: () => call('location'),
+        inspect: (folder) => call('inspect', folder),
+        read: () => call('read'),
+        write: (text) => call('write', text),
+        choose: () => call('choose'),
+        use: (folder) => call('use', folder),
+        reveal: () => call('reveal'),
+      } });
+    })();
+    """
+  static let fileName = "Pinpad Workspace.json"
+  private static let folderKey = "StorageFolder"
+
+  private var defaultFolder: URL {
+    FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("Pinpad")
+  }
+  private var folder: URL {
+    UserDefaults.standard.string(forKey: Self.folderKey).map { URL(fileURLWithPath: $0) } ?? defaultFolder
+  }
+  private var file: URL { folder.appendingPathComponent(Self.fileName) }
+
+  private func location() -> [String: Any] {
+    [
+      "folder": folder.path, "file": file.path, "defaultFolder": defaultFolder.path,
+      "isDefault": folder.standardizedFileURL == defaultFolder.standardizedFileURL,
+      "exists": FileManager.default.fileExists(atPath: file.path),
+    ]
+  }
+
+  /// Reads and writes run off the main thread, in order, so a large workspace (or macOS asking
+  /// for folder access the first time) doesn't freeze the window.
+  private let ioQueue = DispatchQueue(label: "pinpad.storage")
+
+  private func onIOQueue(
+    _ replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void,
+    _ work: @escaping @Sendable () throws -> Any
+  ) {
+    ioQueue.async {
+      let result = Result { try work() }
+      DispatchQueue.main.async {
+        switch result {
+        case .success(let value): replyHandler(value, nil)
+        case .failure(let error): replyHandler(nil, error.localizedDescription)
+        }
+      }
+    }
+  }
+
+  func userContentController(
+    _ controller: WKUserContentController,
+    didReceive message: WKScriptMessage,
+    replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
+  ) {
+    guard let body = message.body as? [String: Any], let op = body["op"] as? String else {
+      replyHandler(nil, "Bad storage request")
+      return
+    }
+    let arg = body["arg"] as? String
+    switch op {
+    case "location":
+      replyHandler(location(), nil)
+    case "inspect":
+      let path = URL(fileURLWithPath: arg ?? folder.path).appendingPathComponent(Self.fileName).path
+      replyHandler(["hasWorkspace": FileManager.default.fileExists(atPath: path)], nil)
+    case "read":
+      let file = file
+      onIOQueue(replyHandler) {
+        FileManager.default.fileExists(atPath: file.path) ? try String(contentsOf: file, encoding: .utf8) as Any : NSNull()
+      }
+    case "write":
+      let (folder, file, data) = (folder, file, Data((arg ?? "").utf8))
+      onIOQueue(replyHandler) {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: file, options: .atomic)
+        return true
+      }
+    case "choose":
+      let panel = NSOpenPanel()
+      panel.canChooseDirectories = true
+      panel.canChooseFiles = false
+      panel.canCreateDirectories = true
+      panel.prompt = "Use This Folder"
+      panel.message = "Choose where Pinpad keeps your boards"
+      panel.directoryURL = folder
+      let finish: (NSApplication.ModalResponse) -> Void = { response in
+        replyHandler(response == .OK ? panel.url?.path as Any : NSNull(), nil)
+      }
+      if let window = message.webView?.window { panel.beginSheetModal(for: window, completionHandler: finish) }
+      else { finish(panel.runModal()) }
+    case "use":
+      if let arg, URL(fileURLWithPath: arg).standardizedFileURL != defaultFolder.standardizedFileURL {
+        UserDefaults.standard.set(arg, forKey: Self.folderKey)
+      } else {
+        UserDefaults.standard.removeObject(forKey: Self.folderKey)
+      }
+      replyHandler(location(), nil)
+    case "reveal":
+      if FileManager.default.fileExists(atPath: file.path) {
+        NSWorkspace.shared.activateFileViewerSelecting([file])
+      } else {
+        NSWorkspace.shared.open(folder)
+      }
+      replyHandler(true, nil)
+    default:
+      replyHandler(nil, "Unknown storage request \(op)")
+    }
+  }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   private var window: NSWindow!
@@ -182,6 +300,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     config.userContentController.addScriptMessageHandler(PageFetcher(), contentWorld: .page, name: "fetchPage")
     config.userContentController.addUserScript(
       WKUserScript(source: PageFetcher.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    // After PageFetcher's script, which creates window.pinpadNative.
+    config.userContentController.addScriptMessageHandler(StorageBridge(), contentWorld: .page, name: "storage")
+    config.userContentController.addUserScript(
+      WKUserScript(source: StorageBridge.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     config.userContentController.addUserScript(
       WKUserScript(source: ConsoleLogger.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 

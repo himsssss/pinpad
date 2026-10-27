@@ -6,18 +6,7 @@
  */
 
 import type { LinkPreview } from './types';
-
-interface PageResponse {
-  url: string;
-  html: string;
-}
-
-declare global {
-  interface Window {
-    /** Provided by the desktop apps (macos/main.swift, desktop/preload.cjs). */
-    pinpadNative?: { fetchPage(url: string): Promise<PageResponse | null>; embedBase?: string };
-  }
-}
+import type { PageResponse } from './native';
 
 export function youtubeId(url: string) {
   try {

@@ -3,6 +3,7 @@ import { produce, type Draft } from 'immer';
 import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { deleteElements, seedDoc } from './doc';
+import { nativeStorage } from './native';
 
 export interface State {
   doc: Doc;
@@ -10,6 +11,8 @@ export interface State {
   canUndo: boolean;
   canRedo: boolean;
   saved: boolean;
+  /** Why the workspace file in the storage folder couldn't be read or written (desktop apps). */
+  storageError: string | null;
 }
 
 let state: State;
@@ -134,7 +137,9 @@ export function openBoard(boardId: string) {
 
 // ---- persistence ----
 // The document (which can hold images) lives in IndexedDB; the small view state goes to
-// localStorage synchronously so a reload always reopens the board you were on.
+// localStorage synchronously so a reload always reopens the board you were on. The desktop
+// apps also keep the document as a JSON file in the user's storage folder, which is the copy
+// they load; IndexedDB stays as a backup.
 
 // Original name kept so saved view state still loads.
 const UI_KEY = 'milanote-clone:ui';
@@ -157,11 +162,88 @@ function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'colla
   }
 }
 
+/** Set when the workspace file exists but couldn't be read, so it's never overwritten. */
+let fileBlocked = false;
+/** File writes run one at a time, in order. */
+let writing: Promise<unknown> = Promise.resolve();
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+function writeFile(doc: Doc) {
+  const storage = nativeStorage();
+  if (!storage || fileBlocked) return writing;
+  const text = JSON.stringify(doc);
+  writing = writing.then(() =>
+    storage.write(text).then(
+      () => state.storageError && setState({ storageError: null }),
+      (err) => setState({ storageError: `Couldn't save to your storage folder: ${errorText(err)}` }),
+    ),
+  );
+  return writing;
+}
+
 async function flush() {
   clearTimeout(persistTimer);
   persistTimer = undefined;
-  await save('doc', state.doc);
+  const doc = state.doc;
+  await Promise.all([save('doc', doc), writeFile(doc)]);
   if (persistTimer === undefined) setState({ saved: true });
+}
+
+/** Parses an exported or stored workspace, throwing if it isn't one. */
+export function parseWorkspace(text: string): Doc {
+  const doc = JSON.parse(text) as Doc;
+  if (!doc?.boards?.[doc.rootId] || !doc.elements) throw new Error('Not a Pinpad workspace file');
+  // Workspaces saved before folders existed.
+  doc.folders ??= {};
+  return doc;
+}
+
+/** Writes any pending change now (the desktop apps call this before quitting). */
+export async function flushNow() {
+  if (persistTimer !== undefined) await flush();
+  await writing;
+}
+
+/**
+ * Points the desktop app at another storage folder. "open" loads the workspace already in
+ * that folder; "replace" writes the current boards there. The old folder's file is left
+ * alone either way.
+ */
+export async function switchStorageFolder(folder: string | null, keep: 'open' | 'replace') {
+  const storage = nativeStorage();
+  if (!storage) return;
+  await flushNow();
+  const previous = await storage.location();
+  await storage.use(folder);
+  if (keep === 'replace') {
+    fileBlocked = false;
+    setState({ storageError: null });
+    await writeFile(state.doc);
+    return;
+  }
+  let doc: Doc;
+  try {
+    const text = await storage.read();
+    if (text == null) throw new Error('No workspace file in that folder');
+    doc = parseWorkspace(text);
+  } catch (err) {
+    await storage.use(previous.isDefault ? null : previous.folder);
+    throw err;
+  }
+  fileBlocked = false;
+  past = [];
+  future = [];
+  pendingBase = null;
+  const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
+  setState({
+    doc,
+    ui: { ...state.ui, boardId, selection: [], editingId: null, playingId: null, dropTarget: null },
+    canUndo: false,
+    canRedo: false,
+    storageError: null,
+  });
+  await save('doc', doc);
 }
 
 function schedulePersist() {
@@ -171,12 +253,24 @@ function schedulePersist() {
 
 export async function initStore() {
   let doc = await load<Doc>('doc').catch(() => undefined);
+  let storageError: string | null = null;
+  let fileMissing = false;
+  const storage = nativeStorage();
+  if (storage) {
+    // The file in the storage folder wins; IndexedDB is the fallback and, on the first
+    // launch with folder storage, the boards that get moved into the file.
+    try {
+      const text = await storage.read();
+      if (text == null) fileMissing = true;
+      else doc = parseWorkspace(text);
+    } catch (err) {
+      fileBlocked = true;
+      storageError = `Couldn't read the workspace file in your storage folder (${errorText(err)}). Showing the copy saved in the app; changes won't be written to that file until you choose a folder in Storage location.`;
+    }
+  }
   const savedUI = loadUI();
   const flushPending = () => persistTimer !== undefined && flush();
-  // The macOS app calls this before quitting so the last edit isn't lost.
-  (window as Window & { __flushSave?: () => Promise<void> }).__flushSave = async () => {
-    if (persistTimer !== undefined) await flush();
-  };
+  (window as Window & { __flushSave?: () => Promise<void> }).__flushSave = flushNow;
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flushPending());
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();
@@ -200,6 +294,8 @@ export async function initStore() {
     canUndo: false,
     canRedo: false,
     saved: true,
+    storageError,
   };
   save('doc', doc);
+  if (fileMissing) writeFile(doc);
 }

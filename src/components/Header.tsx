@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Download, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Download, FolderCog, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
-import { getState, mutate, openBoard, redo, undo, useStore } from '../store';
+import { getState, mutate, openBoard, parseWorkspace, redo, undo, useStore } from '../store';
+import { nativeStorage } from '../native';
+import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD, SHIFT } from '../shortcuts';
@@ -33,8 +35,7 @@ function importJSON() {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const doc = JSON.parse(await file.text()) as Doc;
-      if (!doc.boards?.[doc.rootId] || !doc.elements) throw new Error('Not a workspace file');
+      const doc = parseWorkspace(await file.text());
       if (confirm('Replace your workspace with this file? You can undo this.')) replaceDoc(doc);
     } catch (err) {
       alert(`Couldn't import: ${(err as Error).message}`);
@@ -50,7 +51,9 @@ export function Header({ onSearch }: { onSearch: () => void }) {
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
   const saved = useStore((s) => s.saved);
+  const storageError = useStore((s) => s.storageError);
   const [menu, setMenu] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const path = boardPath(getState().doc, boardId);
   const board = boards[boardId];
@@ -105,7 +108,11 @@ export function Header({ onSearch }: { onSearch: () => void }) {
             </>
           )}
         </nav>
-        <span className={`save-status ${saved ? 'saved' : 'saving'}`} title={saved ? 'All changes saved' : 'Saving…'} />
+        {storageError ? (
+          <button className="save-status error" onClick={() => setStorageOpen(true)} title={storageError} aria-label="Storage problem" />
+        ) : (
+          <span className={`save-status ${saved ? 'saved' : 'saving'}`} title={saved ? 'All changes saved' : 'Saving…'} />
+        )}
       </header>
 
       <div className="topbar topbar-right">
@@ -117,6 +124,9 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           <button className="icon-btn" onClick={() => setMenu((m) => !m)} aria-label="Settings" title="Settings"><Settings size={18} /></button>
           {menu && (
             <div className="menu">
+              {nativeStorage() && (
+                <button onClick={() => { setStorageOpen(true); setMenu(false); }}><FolderCog size={14} /> Storage location…</button>
+              )}
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
               <button onClick={() => { importJSON(); setMenu(false); }}><Upload size={14} /> Import workspace</button>
               <button onClick={() => { if (confirm('Reset to the demo workspace? You can undo this.')) replaceDoc(seedDoc()); setMenu(false); }}>
@@ -129,6 +139,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           <Download size={15} /> Export
         </button>
       </div>
+      {storageOpen && <StorageDialog onClose={() => setStorageOpen(false)} />}
     </>
   );
 }

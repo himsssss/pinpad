@@ -25,6 +25,8 @@
   <string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Pinpad saves your boards in a folder you choose, Documents/Pinpad by default.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

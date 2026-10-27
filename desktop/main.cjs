@@ -1,7 +1,8 @@
 // Electron shell for Pinpad (used for the Windows build): one window that loads the built web
 // app from inside the package over a custom scheme, so IndexedDB and localStorage persist.
 
-const { app, BrowserWindow, Menu, ipcMain, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol, shell } = require('electron');
+const fs = require('node:fs/promises');
 const http = require('node:http');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -88,6 +89,85 @@ function startEmbedServer() {
   });
 }
 
+/**
+ * Keeps the workspace as a JSON file in a folder the user picks (Documents\Pinpad by
+ * default). Same calls as StorageBridge in the macOS shell; the choice lives in
+ * settings.json in the app's data folder.
+ */
+const WORKSPACE_FILE = 'Pinpad Workspace.json';
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+const defaultFolder = () => path.join(app.getPath('documents'), 'Pinpad');
+
+async function readSettings() {
+  try {
+    return JSON.parse(await fs.readFile(settingsPath(), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+async function writeSettings(settings) {
+  await fs.mkdir(path.dirname(settingsPath()), { recursive: true });
+  await fs.writeFile(settingsPath(), JSON.stringify(settings, null, 2));
+}
+
+const exists = (file) => fs.access(file).then(() => true, () => false);
+const sameFolder = (a, b) => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+async function storageFolder() {
+  return (await readSettings()).storageFolder || defaultFolder();
+}
+
+async function storageLocation() {
+  const folder = await storageFolder();
+  const file = path.join(folder, WORKSPACE_FILE);
+  return { folder, file, defaultFolder: defaultFolder(), isDefault: sameFolder(folder, defaultFolder()), exists: await exists(file) };
+}
+
+async function storage(event, op, arg) {
+  const folder = await storageFolder();
+  const file = path.join(folder, WORKSPACE_FILE);
+  switch (op) {
+    case 'location':
+      return storageLocation();
+    case 'inspect':
+      return { hasWorkspace: await exists(path.join(arg || folder, WORKSPACE_FILE)) };
+    case 'read':
+      return (await exists(file)) ? fs.readFile(file, 'utf8') : null;
+    case 'write': {
+      // Write beside the file, then swap it in, so a crash never leaves half a workspace.
+      await fs.mkdir(folder, { recursive: true });
+      const tmp = `${file}.tmp`;
+      await fs.writeFile(tmp, String(arg ?? ''));
+      await fs.rename(tmp, file);
+      return true;
+    }
+    case 'choose': {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Choose where Pinpad keeps your boards',
+        buttonLabel: 'Use This Folder',
+        defaultPath: folder,
+        properties: ['openDirectory', 'createDirectory', 'promptToCreate'],
+      });
+      return result.canceled ? null : result.filePaths[0];
+    }
+    case 'use': {
+      const settings = await readSettings();
+      if (arg && !sameFolder(arg, defaultFolder())) settings.storageFolder = arg;
+      else delete settings.storageFolder;
+      await writeSettings(settings);
+      return storageLocation();
+    }
+    case 'reveal':
+      if (await exists(file)) shell.showItemInFolder(file);
+      else await shell.openPath(folder);
+      return true;
+    default:
+      throw new Error(`Unknown storage request ${op}`);
+  }
+}
+
 const isAppUrl = (url) => url.startsWith(`${SCHEME}://`);
 const isWebUrl = (url) => /^https?:\/\//i.test(url);
 
@@ -163,6 +243,7 @@ function buildMenu() {
 app.whenReady().then(async () => {
   protocol.handle(SCHEME, serveBundle);
   ipcMain.handle('pinpad:fetch-page', fetchPage);
+  ipcMain.handle('pinpad:storage', storage);
   embedBase = await startEmbedServer();
   ipcMain.on('pinpad:embed-base', (event) => {
     event.returnValue = embedBase;
