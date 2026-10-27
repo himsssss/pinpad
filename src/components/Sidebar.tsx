@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Home, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
 import { browse, getState, mutate, openBoard, setUI, useStore } from '../store';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
@@ -244,16 +244,6 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar" aria-label="Folders and projects">
-      <div className="sidebar-top">
-        <button className={`project-row home ${browsing === null && boardId === doc.rootId ? 'current' : ''}`} onClick={() => openBoard(doc.rootId)}>
-          <span className="sidebar-icon"><Home size={15} /></span>
-          <span className="project-name">Home</span>
-        </button>
-        <button className="sidebar-collapse" aria-label="Collapse sidebar" title={`Collapse sidebar (${MOD}\\)`} onClick={() => setUI({ sidebarOpen: false })}>
-          <ChevronsLeft size={15} />
-        </button>
-      </div>
-
       {/* One list: folders first, then projects that aren't in a folder. Dropping a project
           or folder anywhere outside a folder moves it to the top level. */}
       <div
@@ -267,6 +257,10 @@ export function Sidebar() {
           </button>
           <button aria-label="New folder" title="New folder" onClick={() => createFolder()}>
             <FolderPlus size={14} />
+          </button>
+          {/* Home is reached from the logo (Projects page) and the breadcrumbs. */}
+          <button aria-label="Collapse sidebar" title={`Collapse sidebar (${MOD}\\)`} onClick={() => setUI({ sidebarOpen: false })}>
+            <ChevronsLeft size={14} />
           </button>
         </div>
         {!isCollapsed('folders') && (

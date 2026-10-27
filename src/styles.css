@@ -176,11 +176,7 @@ input { font: inherit; color: inherit; }
   overflow-y: auto;
   z-index: 11;
 }
-.sidebar-top { display: flex; align-items: center; gap: 2px; }
-.sidebar-top .project-row { flex: 1; }
-.sidebar-collapse { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: var(--r-md); color: var(--stone); }
-.sidebar-collapse:hover { background: var(--surface); color: var(--ink); }
-.sidebar-section { margin-top: 12px; padding-bottom: 24px; border-radius: var(--r-md); }
+.sidebar-section { margin-top: 2px; padding-bottom: 24px; border-radius: var(--r-md); }
 .sidebar-heading {
   display: flex;
   align-items: center;
@@ -233,7 +229,6 @@ input { font: inherit; color: inherit; }
 .project-row.current { background: var(--blue-tint); color: var(--blue); font-weight: 600; }
 .project-row.current .sidebar-icon { color: var(--blue); }
 .project-row.in-path { font-weight: 600; }
-.project-row.home { font-weight: 500; }
 .project-row .board-icon svg { width: 11px; height: 11px; }
 .project-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sidebar-icon { width: 20px; display: grid; place-items: center; color: var(--steel); flex-shrink: 0; }
