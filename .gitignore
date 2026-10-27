@@ -3,3 +3,5 @@ dist
 build
 release
 .env.local
+web-deploy
+.vercel
