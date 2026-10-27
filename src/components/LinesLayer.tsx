@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { LineEl } from '../types';
 import { checkpoint, getState, mutate, useStore } from '../store';
-import { beginCardPointer, cardUnder, screenToWorld, worldRect } from '../interactions';
+import { beginCardPointer, cardUnder, screenToWorld, trackPress, worldRect } from '../interactions';
 
 type Pt = { x: number; y: number };
 type Rect = { x: number; y: number; w: number; h: number };
@@ -51,13 +51,10 @@ function dragEndpoint(e: React.PointerEvent, line: LineEl, which: 'start' | 'end
     }, 'pending');
   };
   const up = (ev: PointerEvent) => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    const target = cardUnder(ev.clientX, ev.clientY, [line.id, other]);
+    const target = ev.type !== 'pointercancel' && cardUnder(ev.clientX, ev.clientY, [line.id, other]);
     if (target) mutate((d) => { (d.elements[line.id] as LineEl)[which].elId = target; }, 'pending');
   };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  trackPress(e, move, up);
 }
 
 function dragBend(e: React.PointerEvent, line: LineEl) {
@@ -72,12 +69,7 @@ function dragBend(e: React.PointerEvent, line: LineEl) {
     if (Math.abs(bend) < 6) bend = 0;
     mutate((d) => { (d.elements[line.id] as LineEl).bend = Math.round(bend); }, 'pending');
   };
-  const up = () => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-  };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  trackPress(e, move);
 }
 
 /**
