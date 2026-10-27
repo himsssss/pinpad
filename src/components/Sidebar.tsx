@@ -12,6 +12,7 @@ import {
 import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
 import { TRASH } from './TrashPage';
 import { PlaceSwitcher } from './PlaceSwitcher';
+import { SaveBar } from './SaveBar';
 import { openStorageSettings } from './Header';
 
 /** Inline name editor for a folder or project, committed on Enter or blur. */
@@ -211,6 +212,7 @@ export function Sidebar() {
       {/* The logo opens the list of places boards are kept in (each Google Drive, folders, this browser). */}
       <div className="sidebar-brand">
         <PlaceSwitcher onSettings={openStorageSettings} />
+        <SaveBar />
       </div>
       {/* One list: folders first, then projects that aren't in a folder. Dropping a project
           or folder anywhere outside a folder moves it to the top level. */}

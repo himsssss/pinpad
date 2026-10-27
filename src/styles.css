@@ -983,3 +983,18 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .template-source-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; margin-top: 4px; }
 .template-source-list .project-row { font-size: 14px; }
 .template-source-hint { margin-left: auto; color: var(--stone); }
+
+/* ---------- saving progress bar under the logo ---------- */
+
+.sidebar-brand { position: relative; }
+.save-bar { position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; border-radius: 2px; overflow: hidden; pointer-events: none; transition: opacity 0.3s var(--ease); }
+.topbar-left .save-bar { left: 14px; right: 14px; bottom: 4px; }
+.save-bar span { display: block; height: 100%; width: 0; border-radius: 2px; background: var(--blue); transition: width 0.3s var(--ease); }
+.save-bar.idle { opacity: 0; }
+.save-bar.busy span { width: 35%; animation: save-slide 1.1s ease-in-out infinite; }
+.save-bar.done span { width: 100%; background: var(--success); }
+.save-bar.done { animation: save-fade 0.9s ease forwards; }
+.save-bar.failed span { width: 100%; background: var(--danger); }
+@keyframes save-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+@keyframes save-fade { 0%, 55% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .save-bar.busy span { animation: none; width: 100%; opacity: 0.5; } }

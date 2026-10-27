@@ -5,6 +5,7 @@ import { TRASH } from './TrashPage';
 import type { Doc } from '../types';
 import { browse, getState, mutate, openBoard, redo, setUI, undo, useStore } from '../store';
 import { PlaceSwitcher } from './PlaceSwitcher';
+import { SaveBar } from './SaveBar';
 import { parseWorkspace } from '../workspaceFiles';
 import { nativeStorage } from '../native';
 import { googleConfigured } from '../googleAuth';
@@ -134,6 +135,7 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
               <PanelLeftOpen size={18} />
             </button>
             {hasPath && <span className="topbar-sep" />}
+            <SaveBar />
           </>
         )}
         {browsing !== null ? (

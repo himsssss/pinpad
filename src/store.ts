@@ -19,6 +19,8 @@ export interface State {
   storageError: string | null;
   /** Name of the folder the boards are saved in (in Google Drive or on this computer); null in browser storage. */
   storageName: string | null;
+  /** How far the save under way has got (0–1), when the storage reports it; null otherwise. */
+  saveProgress: number | null;
 }
 
 let state: State;
@@ -201,7 +203,10 @@ function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'colla
 }
 
 /** Where board files are saved: a storage folder (desktop apps), Google Drive, or nowhere. */
-type Backend = Pick<NativeStorage, 'read' | 'write' | 'list'>;
+type Backend = Pick<NativeStorage, 'read' | 'list'> & {
+  /** Google Drive reports each file done; the desktop apps write a batch in one go. */
+  write(batch: StorageBatch, onProgress?: (done: number) => void): Promise<boolean>;
+};
 export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'browser' };
 
 /** Per device: whether this computer or browser keeps its boards in Google Drive. */
@@ -284,13 +289,16 @@ function writeFiles(doc: Doc) {
     const next = layoutWorkspace(doc);
     const batch = changesTo(next);
     if (!batch.write.length && !batch.remove.length && !batch.trash.length) return;
+    const total = batch.write.length + batch.remove.length + batch.trash.length;
+    setState({ saveProgress: 0 });
     try {
-      await target.write(batch);
+      await target.write(batch, (done) => setState({ saveProgress: done / total }));
       onDisk = next;
-      if (state.storageError) setState({ storageError: null });
+      setState({ saveProgress: null, ...(state.storageError ? { storageError: null } : {}) });
     } catch (err) {
       // onDisk stays as it was, so the next save retries everything that didn't go through.
       setState({
+        saveProgress: null,
         storageError: err instanceof SignInNeeded ? err.message : `Couldn't save to ${placeName()}: ${errorText(err)}`,
       });
       return;
@@ -642,6 +650,7 @@ export async function initStore() {
     saved: true,
     storageError,
     storageName: null,
+    saveProgress: null,
   };
   if (fileBlocked) blockedDoc = doc;
   refreshStorageName().catch(() => {});

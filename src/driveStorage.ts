@@ -207,10 +207,18 @@ export const driveStorage = {
     return out;
   },
 
-  async write(batch: StorageBatch) {
+  /** Writes the batch file by file, reporting how many are done. */
+  async write(batch: StorageBatch, onProgress?: (done: number) => void) {
     await ready();
-    for (const [path, text] of batch.write) await writeFile(path, text);
-    for (const path of [...batch.remove, ...batch.trash]) await trash(path);
+    let done = 0;
+    for (const [path, text] of batch.write) {
+      await writeFile(path, text);
+      onProgress?.(++done);
+    }
+    for (const path of [...batch.remove, ...batch.trash]) {
+      await trash(path);
+      onProgress?.(++done);
+    }
     return true;
   },
 
