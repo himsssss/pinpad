@@ -62,6 +62,7 @@
   },
   "dependencies": {
     "html-to-image": "^1.11.11",
-    "jspdf": "^2.5.2"
+    "jspdf": "^2.5.2",
+    "pdfjs-dist": "^4.10.38"
   }
 }
