@@ -1,6 +1,6 @@
 /**
  * A folder on this computer as the website's storage, through the browser's folder access
- * (Chrome and Edge; only in builds that turn it on, see webFoldersSupported): the user picks a folder and Pinpad keeps its board files and attached
+ * (Chrome and Edge): the user picks a folder and Pinpad keeps its board files and attached
  * files there, in the same layout as the desktop apps (workspaceFiles.ts), so the folder can
  * also be opened by the Mac and Windows apps or synced by iCloud Drive, OneDrive or Dropbox.
  *
@@ -36,11 +36,10 @@ export class FolderAccessNeeded extends SignInNeeded {
 }
 
 /**
- * Off on the hosted website (Vercel, GitHub Pages): choosing folders is for the desktop apps.
- * A build with VITE_WEB_FOLDERS=on offers it in Chrome and Edge.
+ * Whether this browser can keep boards in a folder (Chrome and Edge). Where it can, the
+ * website offers a folder instead of "This browser"; Safari and Firefox keep "This browser".
  */
 export const webFoldersSupported = () =>
-  import.meta.env.VITE_WEB_FOLDERS === 'on' &&
   !window.pinpadNative &&
   typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function';
 

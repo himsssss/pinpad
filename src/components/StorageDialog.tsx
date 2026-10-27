@@ -204,18 +204,18 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
 
         {tab === 'local' && !storage && !webFolder && (
           <p className="dialog-text">
-            Boards are saved in this browser only, so clearing its site data deletes them.{' '}
             {pickFolders
-              ? 'Choose a folder on this computer to keep them as files you can back up, or save to Google Drive or OneDrive.'
-              : 'Save to Google Drive or OneDrive, or use Export now and then, to keep a copy.'}
+              ? 'Choose a folder on this computer and Pinpad saves each board there as a file: on your computer, never on the website. Until then your boards are kept in this browser, and clearing its site data deletes them.'
+              : 'Boards are saved in this browser only, so clearing its site data deletes them. Save to Google Drive or OneDrive, or use Export now and then, to keep a copy.'}
           </p>
         )}
 
         {tab === 'local' && webFolder && (
           <>
             <p className="dialog-text">
-              Pinpad saves each board as its own file in this folder, with a folder for each project and its attached
-              files. Pick a folder that iCloud Drive, OneDrive or Dropbox syncs to keep a backup.
+              Pinpad saves each board as its own file in this folder on your computer, with a folder for each project
+              and its attached files; nothing is stored on the website. Pick a folder that iCloud Drive, OneDrive or
+              Dropbox syncs to keep a backup.
             </p>
             <div className="storage-path">
               <FolderOpen size={18} aria-hidden="true" />
@@ -327,7 +327,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 {webFolder ? 'Change folder…' : 'Choose a folder…'}
               </button>
             )}
-            {tab === 'local' && !storage && (cloud || webFolder) && (
+            {tab === 'local' && !storage && !pickFolders && cloud && (
               <button className="btn-primary" disabled={busy} onClick={() => run(() => switchStorage({ kind: 'browser' }, 'replace'))}>
                 Keep boards in this browser instead
               </button>

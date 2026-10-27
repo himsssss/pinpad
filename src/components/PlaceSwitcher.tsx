@@ -80,8 +80,10 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
     const { name, detail } = describePlace(place, false);
     const current = place.id === list?.current;
     // Leaving the open place first: this browser on the website, the default folder in the apps.
-    const fallback = current ? list?.places.find((p) => p.kind === 'browser' || (p.kind === 'folder' && p.isDefault)) : undefined;
-    const fallbackName = fallback ? describePlace(fallback, false).name : '';
+    const fallback: Place | undefined = current
+      ? list?.places.find((p) => p.kind === 'browser' || (p.kind === 'folder' && p.isDefault)) ?? { id: 'browser', kind: 'browser' }
+      : undefined;
+    const fallbackName = fallback?.kind === 'browser' ? 'this browser' : fallback ? describePlace(fallback, false).name : '';
     const cloud = place.kind === 'drive' || place.kind === 'onedrive';
     const service = place.kind === 'drive' ? 'Google' : 'Microsoft';
     const ok = await askConfirm({
@@ -179,7 +181,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
           )}
           {webFoldersSupported() && (
             <button role="menuitem" disabled={busy} onClick={() => run(() => addWebFolder(chooseForNewPlace))}>
-              <FolderPlus size={14} /> Use a folder on this computer
+              <FolderPlus size={14} /> Choose a folder on this computer
             </button>
           )}
           <button role="menuitem" onClick={() => { setOpen(false); onSettings(); }}>

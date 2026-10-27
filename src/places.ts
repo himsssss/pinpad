@@ -54,7 +54,9 @@ export async function listPlaces(): Promise<{ places: Place[]; current: string }
     for (const folder of folders) places.push({ id: `folder:${folder}`, kind: 'folder', folder, isDefault: folder === loc.defaultFolder });
     if (!cloudInUse()) current = `folder:${loc.folder}`;
   } else {
-    places.push({ id: 'browser', kind: 'browser' });
+    // Where folders can be chosen they replace "This browser", which only shows while it's
+    // still in use (before a folder is chosen).
+    if (!webFoldersSupported() || (!cloudInUse() && !usingWebFolder())) places.push({ id: 'browser', kind: 'browser' });
     if (webFoldersSupported()) {
       for (const f of await webFolders()) places.push({ id: `webfolder:${f.id}`, kind: 'webfolder', folderId: f.id, name: f.name });
       if (usingWebFolder()) current = `webfolder:${currentWebFolder()!.id}`;
@@ -171,5 +173,6 @@ export function describePlace(place: Place, current: boolean) {
     const name = place.folder.split(/[\\/]/).filter(Boolean).pop() ?? place.folder;
     return { name, detail: place.isDefault ? 'Default folder on this computer' : place.folder };
   }
+  if (webFoldersSupported()) return { name: 'Not saved to a folder yet', detail: 'Kept in this browser until you choose a folder' };
   return { name: 'This browser', detail: 'Saved only on this device' };
 }
