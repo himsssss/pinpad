@@ -236,7 +236,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
         {tab === 'drive' && googleConfigured() && !googleAllowedHere() && (
           <p className="dialog-text">
             Google only lets Pinpad sign in from {listOf(googleWebOrigins().map((o) => o.replace(/^https?:\/\//, '')))}, but
-            this copy is open at {window.location.host}. {driveSite && <>Open <a href={`${driveSite}/pinpad/`}>{driveSite.replace(/^https:\/\//, '')}/pinpad</a> to use Google Drive.</>}
+            this copy is open at {window.location.host}. {driveSite && <>Open <a href={`${driveSite}/`}>{driveSite.replace(/^https:\/\//, '')}</a> to use Google Drive.</>}
           </p>
         )}
 

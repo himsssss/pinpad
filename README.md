@@ -9,8 +9,8 @@ device.
 
 ## Try it
 
-Open **[himsssss.github.io/pinpad](https://himsssss.github.io/pinpad/)** to use Pinpad in your browser. Boards
-are saved in that browser only; the desktop apps save them as files you can back up.
+Open **[pinpad-taupe.vercel.app](https://pinpad-taupe.vercel.app/)** to use Pinpad in your browser. Boards
+are saved in that browser, or in your Google Drive; the desktop apps save them as files you can back up.
 
 ## Download
 
@@ -64,8 +64,13 @@ npm run build:win    # Windows installers in release/ (Electron; can be built on
 npm run desktop      # run the Electron shell locally
 ```
 
-Every push to `main` rebuilds the web app and publishes it to GitHub Pages
-(`.github/workflows/pages.yml`).
+The website is hosted on Vercel. To publish it, build it without the desktop client's secret
+and deploy the folder:
+
+```bash
+VITE_GOOGLE_DESKTOP_CLIENT_SECRET= npx vite build --outDir web-deploy/pinpad
+cd web-deploy/pinpad && npx vercel deploy --prod
+```
 
 The macOS app is a small Swift/AppKit wrapper around a WebKit view (`macos/`); the Windows
 app uses Electron (`desktop/`). Both load the same web build from inside the app bundle.
@@ -81,11 +86,11 @@ OAuth clients from a Google Cloud project you own:
    asks for the `drive.file` scope (files it creates itself), which Google doesn't treat as
    sensitive.
 3. Create a **Web application** client with these authorized JavaScript origins:
-   `https://himsssss.github.io`, `http://localhost:5180` (dev) and `http://localhost:4173`
+   `https://pinpad-taupe.vercel.app`, `http://localhost:5180` (dev) and `http://localhost:4173`
    (preview), and list them in `VITE_GOOGLE_WEB_ORIGINS`.
 4. Create a **Desktop app** client for the Mac and Windows apps.
 5. Copy `.env.example` to `.env.local` and fill in the ids (and the desktop client's secret).
-   For the GitHub Pages build, also put `VITE_GOOGLE_WEB_CLIENT_ID=...` in a committed `.env`
+   For the website build, also put `VITE_GOOGLE_WEB_CLIENT_ID=...` in a committed `.env`
    file; client ids aren't secret.
 
 ## Project layout
