@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Folder, FolderPlus, Plus } from 'lucide-react';
+import { ChevronRight, Folder, FolderPlus, Home, Plus } from 'lucide-react';
 import type { Board, Doc, El } from '../types';
 import { browse, mutate, openBoard, useStore } from '../store';
 import { countCards, projects, uid } from '../doc';
@@ -132,6 +132,26 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
         </div>
       </div>
 
+      {!folder && doc.boards[doc.rootId] && (
+        <section>
+          <h2 className="projects-label">Home</h2>
+          <div className="project-grid">
+            <button className="project-tile" onClick={() => openBoard(doc.rootId)} title="Home">
+              <Thumbnail doc={doc} board={doc.boards[doc.rootId]} />
+              <span className="project-tile-info">
+                <span className="home-tile-icon"><Home size={14} /></span>
+                <span className="project-tile-text">
+                  <span className="project-tile-name">Home</span>
+                  <span className="project-tile-meta">
+                    {countCards(doc, doc.rootId) === 1 ? '1 card' : `${countCards(doc, doc.rootId)} cards`}
+                  </span>
+                </span>
+              </span>
+            </button>
+          </div>
+        </section>
+      )}
+
       {subfolders.length > 0 && (
         <section>
           <h2 className="projects-label">Folders</h2>
@@ -156,43 +176,46 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
         </section>
       )}
 
-      <section>
-        <h2 className="projects-label">Projects</h2>
-        {items.length ? (
-          <div className="project-grid">
-            {items.map((b) => {
-              const n = countCards(doc, b.id);
-              return (
-                <button
-                  key={b.id}
-                  className="project-tile"
-                  onClick={() => openBoard(b.id)}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(BOARD_MIME, b.id);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragEnd={() => setDropOn(null)}
-                  title={b.title}
-                >
-                  <Thumbnail doc={doc} board={b} />
-                  <span className="project-tile-info">
-                    <BoardIcon icon={b.icon} color={b.color} size={22} />
-                    <span className="project-tile-text">
-                      <span className="project-tile-name">{b.title || 'Untitled'}</span>
-                      <span className="project-tile-meta">{n === 1 ? '1 card' : `${n} cards`}</span>
+      {/* At the top level, a list where every project is in a folder needs no empty section. */}
+      {(items.length > 0 || folder || subfolders.length === 0) && (
+        <section>
+          <h2 className="projects-label">Projects</h2>
+          {items.length ? (
+            <div className="project-grid">
+              {items.map((b) => {
+                const n = countCards(doc, b.id);
+                return (
+                  <button
+                    key={b.id}
+                    className="project-tile"
+                    onClick={() => openBoard(b.id)}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(BOARD_MIME, b.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => setDropOn(null)}
+                    title={b.title}
+                  >
+                    <Thumbnail doc={doc} board={b} />
+                    <span className="project-tile-info">
+                      <BoardIcon icon={b.icon} color={b.color} size={22} />
+                      <span className="project-tile-text">
+                        <span className="project-tile-name">{b.title || 'Untitled'}</span>
+                        <span className="project-tile-meta">{n === 1 ? '1 card' : `${n} cards`}</span>
+                      </span>
                     </span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="projects-empty">
-            {folder ? 'No projects in this folder yet. Drag one here, or create a new one.' : 'No projects yet.'}
-          </p>
-        )}
-      </section>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="projects-empty">
+              {folder ? 'No projects in this folder yet. Drag one here, or create a new one.' : 'No projects yet.'}
+            </p>
+          )}
+        </section>
+      )}
     </main>
   );
 }

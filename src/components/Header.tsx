@@ -108,7 +108,8 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
   return (
     <>
       <header className="topbar topbar-left">
-        <button className="logo" onClick={() => openBoard(rootId)} aria-label="Pinpad home" title="Home">
+        {/* Like Miro or Google Drive, the logo leads to the overview of everything: the Projects page. */}
+        <button className="logo" onClick={() => browse(null)} aria-label="All projects" title="All projects">
           <PinpadMark size={28} />
           <span className="wordmark">Pinpad</span>
         </button>
