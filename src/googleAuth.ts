@@ -11,6 +11,8 @@
 import type { GoogleToken } from './native';
 
 const WEB_CLIENT_ID = import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID ?? '';
+/** Addresses Google accepts sign-in from (the web client's authorized JavaScript origins). */
+const WEB_ORIGINS: string[] = String(import.meta.env.VITE_GOOGLE_WEB_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean);
 const DESKTOP_CLIENT = {
   clientId: import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID ?? '',
   clientSecret: import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_SECRET ?? '',
@@ -54,6 +56,15 @@ export class SignInNeeded extends Error {
 const native = () => window.pinpadNative?.google;
 
 export const googleConfigured = () => (native() ? !!DESKTOP_CLIENT.clientId : !!WEB_CLIENT_ID);
+
+/**
+ * Whether Google will let this copy of the website sign in: only from its registered
+ * addresses. Anywhere else Google shows "Error 400: origin_mismatch".
+ */
+export const googleAllowedHere = () => !!native() || !WEB_ORIGINS.length || WEB_ORIGINS.includes(location.origin);
+
+/** Where the website's Google sign-in works, for telling the user. */
+export const googleWebOrigins = () => WEB_ORIGINS;
 
 /**
  * On the website the access token is also kept for the tab's session, so reloading the page
@@ -146,7 +157,7 @@ let lastRenewal = 0;
 
 /** Whether the website's Google token has run out or will within a few minutes. */
 export function webTokenExpiring() {
-  return !native() && !!WEB_CLIENT_ID && !!googleAccount() && (!token || token.expiresAt - Date.now() < 5 * 60_000);
+  return !native() && !!WEB_CLIENT_ID && googleAllowedHere() && !!googleAccount() && (!token || token.expiresAt - Date.now() < 5 * 60_000);
 }
 
 /**

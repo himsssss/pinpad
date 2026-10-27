@@ -77,7 +77,8 @@ OAuth clients from a Google Cloud project you own:
    asks for the `drive.file` scope (files it creates itself), which Google doesn't treat as
    sensitive.
 3. Create a **Web application** client with these authorized JavaScript origins:
-   `https://himsssss.github.io` and `http://localhost:5180`.
+   `https://himsssss.github.io`, `http://localhost:5180` (dev) and `http://localhost:4173`
+   (preview), and list them in `VITE_GOOGLE_WEB_ORIGINS`.
 4. Create a **Desktop app** client for the Mac and Windows apps.
 5. Copy `.env.example` to `.env.local` and fill in the ids (and the desktop client's secret).
    For the GitHub Pages build, also put `VITE_GOOGLE_WEB_CLIENT_ID=...` in a committed `.env`

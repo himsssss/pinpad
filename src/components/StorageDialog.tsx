@@ -3,10 +3,13 @@ import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-re
 import { afterSignIn, switchStorage, usingDrive, useStore, type StorageTarget } from '../store';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
-import { googleAccount, googleConfigured, preloadGoogle, signIn, signOut } from '../googleAuth';
+import { googleAccount, googleAllowedHere, googleConfigured, googleWebOrigins, preloadGoogle, signIn, signOut } from '../googleAuth';
 
 const isMac = /Mac/.test(navigator.platform);
 const fileManager = isMac ? 'Finder' : 'File Explorer';
+
+/** "a", "a and b", "a, b and c". */
+const listOf = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] ?? '');
 
 /** Google Drive's mark, drawn small next to its tab. */
 function DriveIcon() {
@@ -127,6 +130,9 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
     });
 
   const conflictPlace = conflict?.kind === 'drive' ? 'Your Google Drive' : 'That folder';
+  // Google only lets the website sign in from its registered addresses.
+  const driveHere = googleConfigured() && googleAllowedHere();
+  const driveSite = googleWebOrigins().find((o) => o.startsWith('https://'));
 
   return (
     <div className="search-backdrop" onPointerDown={onClose}>
@@ -177,7 +183,14 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
           <p className="dialog-text">Google Drive isn't set up in this version of Pinpad yet.</p>
         )}
 
-        {tab === 'drive' && googleConfigured() && (
+        {tab === 'drive' && googleConfigured() && !googleAllowedHere() && (
+          <p className="dialog-text">
+            Google only lets Pinpad sign in from {listOf(googleWebOrigins().map((o) => o.replace(/^https?:\/\//, '')))}, but
+            this copy is open at {window.location.host}. {driveSite && <>Open <a href={`${driveSite}/pinpad/`}>{driveSite.replace(/^https:\/\//, '')}/pinpad</a> to use Google Drive.</>}
+          </p>
+        )}
+
+        {tab === 'drive' && driveHere && (
           <>
             <p className="dialog-text">
               Save each board as a file in your Google Drive, in a Pinpad folder, and open them on any computer by
@@ -234,7 +247,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 Keep boards in this browser instead
               </button>
             )}
-            {tab === 'drive' && googleConfigured() && drive && (
+            {tab === 'drive' && driveHere && drive && (
               <>
                 <button className="btn-secondary" disabled={busy} onClick={disconnect}>Disconnect</button>
                 {driveStorage.folderUrl() && (
@@ -245,7 +258,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 {storageError && <button className="btn-primary" disabled={busy} onClick={signInAgain}>Sign in again</button>}
               </>
             )}
-            {tab === 'drive' && googleConfigured() && !drive && (
+            {tab === 'drive' && driveHere && !drive && (
               <button className="btn-primary" disabled={busy} onClick={connect}>
                 {busy ? 'Waiting for Google…' : 'Connect Google Drive'}
               </button>
