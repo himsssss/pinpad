@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
-import { browse, mutate, openBoard, setUI, usingDrive, useStore } from '../store';
+import { browse, mutate, openBoard, setUI, usingDrive, usingOneDrive, useStore } from '../store';
+import { OneDriveIcon } from './OneDriveIcon';
 import { DriveIcon } from './DriveIcon';
 import { boardPath, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
@@ -73,7 +74,7 @@ export function Sidebar() {
         {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </button>
       <button className={`section-label ${browsing === '' ? 'current' : ''}`} onClick={() => browse(null)} title={`Show everything in ${label}`}>
-        {storageName && (usingDrive() ? <DriveIcon size={12} /> : <Folder size={12} />)}
+        {storageName && (usingDrive() ? <DriveIcon size={12} /> : usingOneDrive() ? <OneDriveIcon size={13} /> : <Folder size={12} />)}
         <span className="section-name">{label}</span>
       </button>
       {isCollapsed(section) && count > 0 && <span className="section-count">{count}</span>}

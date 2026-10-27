@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pinpad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body style="font: 16px system-ui, sans-serif; display: grid; place-items: center; height: 90vh; margin: 0; color: #050038">
+    <p>Finishing Microsoft sign-in…</p>
+    <script>
+      // Microsoft sends the sign-in answer here; it goes back to the Pinpad window that opened this one.
+      if (window.opener) {
+        window.opener.postMessage({ type: 'pinpad-microsoft-auth', query: location.search }, location.origin);
+        window.close();
+      } else {
+        document.querySelector('p').textContent = 'You can close this window and go back to Pinpad.';
+      }
+    </script>
+  </body>
+</html>

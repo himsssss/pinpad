@@ -33,6 +33,13 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== self.location.origin) return;
 
+  // Other pages (the privacy page, the Microsoft sign-in return page) come from the network.
+  const appPage = url.pathname === new URL('./', self.location).pathname || url.pathname.endsWith('/index.html');
+  if (request.mode === 'navigate' && !appPage) {
+    event.respondWith(fetch(request).catch(() => caches.match(request)));
+    return;
+  }
+
   if (request.mode === 'navigate') {
     // The page this version was built with, from the cache (a shared link's ?url= query
     // still opens it); from the network only before anything is cached.

@@ -184,6 +184,8 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
         list: () => call('list'),
         writeFile: (file) => call('writeFile', file),
         readFile: (path) => call('readFile', path),
+        moveFile: (move) => call('moveFile', move),
+        trashFile: (path) => call('trashFile', path),
         choose: () => call('choose'),
         use: (folder) => call('use', folder),
         reveal: () => call('reveal'),
@@ -221,12 +223,18 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
     return parts.reduce(folder) { $0.appendingPathComponent(String($1)) }
   }
 
-  /// A page-supplied path to an attached file: only inside the Attachments folder.
+  /// Folders that hold attached files (a project's "Files", and "Attachments"); never boards.
+  nonisolated static func isAttachmentFolder(_ name: String) -> Bool {
+    ["files", "attachments"].contains(name.lowercased())
+  }
+
+  /// A page-supplied path to an attached file: only directly inside a Files or Attachments folder.
   nonisolated private static func resolveAttachment(_ relative: String, in folder: URL) throws -> URL {
-    let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
-    guard parts.count == 2, parts[0] == "Attachments", !parts[1].isEmpty, !parts[1].hasPrefix("."), !parts[1].contains(":")
+    let parts = relative.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard parts.count >= 2, isAttachmentFolder(parts[parts.count - 2]),
+      !parts.contains(where: { $0.isEmpty || $0.hasPrefix(".") || $0.contains(":") })
     else { throw StorageError(errorDescription: "Bad attachment path \(relative)") }
-    return folder.appendingPathComponent("Attachments").appendingPathComponent(String(parts[1]))
+    return parts.reduce(folder) { $0.appendingPathComponent($1) }
   }
 
   /// Removes folders left empty by a moved or deleted board, up to the storage folder.
@@ -264,7 +272,7 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       let dir = String(url.deletingLastPathComponent().path.dropFirst(root.count))
       let join = { (file: String) in dir.isEmpty ? file : "\(dir)/\(file)" }
       let modified = (values?.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000
-      if dir.isEmpty && name == "Attachments" {
+      if isDir && Self.isAttachmentFolder(name) {
         // Files attached to cards, not boards; the page reads them one at a time.
         if isDir { walker.skipDescendants() }
         continue
@@ -352,6 +360,32 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
         guard let bytes = try? Data(contentsOf: url) else { return NSNull() }
         return bytes.base64EncodedString()
       }
+    case "moveFile":
+      // An attached file follows its card or project to another folder.
+      let move = raw as? [String: Any] ?? [:]
+      let (folder, from, to) = (folder, move["from"] as? String ?? "", move["to"] as? String ?? "")
+      onIOQueue(replyHandler) {
+        let fm = FileManager.default
+        let source = try Self.resolveAttachment(from, in: folder)
+        let target = try Self.resolveAttachment(to, in: folder)
+        guard fm.fileExists(atPath: source.path) else { return false }
+        try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if fm.fileExists(atPath: target.path), source.standardizedFileURL.path.lowercased() != target.standardizedFileURL.path.lowercased() {
+          try fm.trashItem(at: target, resultingItemURL: nil)
+        }
+        try fm.moveItem(at: source, to: target)
+        Self.pruneEmpty(above: source, in: folder)
+        return true
+      }
+    case "trashFile":
+      let (folder, path) = (folder, arg ?? "")
+      onIOQueue(replyHandler) {
+        let fm = FileManager.default
+        let url = try Self.resolveAttachment(path, in: folder)
+        if fm.fileExists(atPath: url.path) { try fm.trashItem(at: url, resultingItemURL: nil) }
+        Self.pruneEmpty(above: url, in: folder)
+        return true
+      }
     case "write":
       let batch = raw as? [String: Any] ?? [:]
       let folder = folder
@@ -406,25 +440,73 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
-/// Google sign-in for saving boards to Google Drive, using Google's flow for installed apps:
-/// the default browser opens Google's consent page, which redirects back to a one-off
-/// loopback address with a code (PKCE). The refresh token is kept in the Keychain so later
-/// launches get access tokens without asking again. Exposed as `window.pinpadNative.google`;
-/// mirrors google() in desktop/main.cjs.
+/// A service Pinpad signs in to for saving boards: Google (Google Drive) or Microsoft (OneDrive).
+struct OAuthProvider: Sendable {
+  /// The message handler and `window.pinpadNative` key.
+  let name: String
+  /// Where boards are saved there, for the page shown after signing in.
+  let place: String
+  let authURL: String
+  let tokenURL: String
+  let scope: String
+  let keychainService: String
+  let authParams: [String: String]
+  /// Microsoft wants the scope again when a code or refresh token is exchanged.
+  let scopeOnExchange: Bool
+  let revokeURL: String?
+  /// Microsoft only accepts "localhost" for installed apps' loopback addresses.
+  let loopbackHost: String
+  let emailURL: String
+
+  static let google = OAuthProvider(
+    name: "google", place: "Google Drive",
+    authURL: "https://accounts.google.com/o/oauth2/v2/auth", tokenURL: "https://oauth2.googleapis.com/token",
+    scope: "https://www.googleapis.com/auth/drive.file", keychainService: "Pinpad Google Drive",
+    authParams: ["access_type": "offline", "prompt": "consent"], scopeOnExchange: false,
+    revokeURL: "https://oauth2.googleapis.com/revoke?token=", loopbackHost: "127.0.0.1",
+    emailURL: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")
+
+  static let microsoft = OAuthProvider(
+    name: "microsoft", place: "OneDrive",
+    authURL: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    tokenURL: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    scope: "offline_access User.Read Files.ReadWrite.AppFolder", keychainService: "Pinpad OneDrive",
+    authParams: ["prompt": "select_account", "response_mode": "query"], scopeOnExchange: true,
+    revokeURL: nil, loopbackHost: "localhost",
+    emailURL: "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName")
+
+  /// The signed-in account's email from the provider's answer about the user.
+  func email(from json: [String: Any]?) -> String? {
+    if name == "google" { return (json?["user"] as? [String: Any])?["emailAddress"] as? String }
+    return ((json?["mail"] as? String) ?? (json?["userPrincipalName"] as? String))?.lowercased()
+  }
+}
+
+/// Sign-in for saving boards to Google Drive or OneDrive, using the providers' flow for
+/// installed apps: the default browser opens the consent page, which redirects back to a
+/// one-off loopback address with a code (PKCE). The refresh token is kept in the Keychain so
+/// later launches get access tokens without asking again. Exposed as
+/// `window.pinpadNative.google` and `.microsoft`; mirrors oauth() in desktop/main.cjs.
 @MainActor
-final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
-  static let script = """
+final class OAuthBridge: NSObject, WKScriptMessageHandlerWithReply {
+  static func script(_ provider: OAuthProvider) -> String {
+    """
     (() => {
-      const call = (op, config) => window.webkit.messageHandlers.google.postMessage({ op, config: config ?? null });
-      window.pinpadNative = Object.assign(window.pinpadNative || {}, { google: {
+      const call = (op, config) => window.webkit.messageHandlers.\(provider.name).postMessage({ op, config: config ?? null });
+      window.pinpadNative = Object.assign(window.pinpadNative || {}, { \(provider.name): {
         signIn: (config) => call('signIn', config),
         token: (config) => call('token', config),
         signOut: (config) => call('signOut', config),
       } });
     })();
     """
-  nonisolated private static let scope = "https://www.googleapis.com/auth/drive.file"
-  nonisolated private static let keychainService = "Pinpad Google Drive"
+  }
+
+  let provider: OAuthProvider
+
+  init(provider: OAuthProvider) {
+    self.provider = provider
+  }
 
   struct AuthError: LocalizedError {
     let errorDescription: String?
@@ -443,51 +525,58 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
     guard let body = message.body as? [String: Any], let op = body["op"] as? String else {
-      replyHandler(nil, "Bad Google request")
+      replyHandler(nil, "Bad sign-in request")
       return
     }
     let config = body["config"] as? [String: Any] ?? [:]
     let clientId = config["clientId"] as? String ?? ""
     let secret = config["clientSecret"] as? String ?? ""
-    // Each Google account keeps its own sign-in; a sign-in saved before accounts were kept
+    // Each account keeps its own sign-in; a Google sign-in saved before accounts were kept
     // apart is used for (and moved to) the first account that asks for it.
     let account = config["account"] as? String
+    let provider = self.provider
     switch op {
     case "signIn":
       signIn(clientId: clientId, secret: secret, reply: replyHandler)
     case "token":
-      var refresh = Self.loadRefreshToken(account: account)
-      if refresh == nil, let account, let legacy = Self.loadRefreshToken(account: nil) {
-        Self.saveRefreshToken(legacy, account: account)
-        Self.deleteRefreshToken(account: nil)
+      var refresh = Self.loadRefreshToken(provider, account: account)
+      if refresh == nil, let account, let legacy = Self.loadRefreshToken(provider, account: nil) {
+        Self.saveRefreshToken(provider, legacy, account: account)
+        Self.deleteRefreshToken(provider, account: nil)
         refresh = legacy
       }
       guard let refresh else { return replyHandler(NSNull(), nil) }
-      Self.tokenRequest(["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientId, "client_secret": secret]) { result in
+      var params = ["grant_type": "refresh_token", "refresh_token": refresh, "client_id": clientId]
+      if !secret.isEmpty { params["client_secret"] = secret }
+      if provider.scopeOnExchange { params["scope"] = provider.scope }
+      Self.tokenRequest(provider, params) { result in
         switch result {
         case .success(let json):
+          // Microsoft replaces the refresh token each time; the old one stops working.
+          if let rotated = json["refresh_token"] as? String { Self.saveRefreshToken(provider, rotated, account: account) }
           replyHandler(Self.tokenReply(json), nil)
         case .failure(let error as AuthError) where error.code == "invalid_grant":
           // Revoked or expired: the user signs in again. Other failures (offline) are retried later.
-          Self.deleteRefreshToken(account: account)
+          Self.deleteRefreshToken(provider, account: account)
           replyHandler(NSNull(), nil)
         case .failure(let error):
           replyHandler(nil, error.localizedDescription)
         }
       }
     case "signOut":
-      if let refresh = Self.loadRefreshToken(account: account) ?? Self.loadRefreshToken(account: nil),
-        let url = URL(string: "https://oauth2.googleapis.com/revoke?token=\(Self.formEncode(refresh))")
+      if let revoke = provider.revokeURL,
+        let refresh = Self.loadRefreshToken(provider, account: account) ?? Self.loadRefreshToken(provider, account: nil),
+        let url = URL(string: revoke + Self.formEncode(refresh))
       {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         URLSession.shared.dataTask(with: request).resume()
       }
-      Self.deleteRefreshToken(account: account)
-      Self.deleteRefreshToken(account: nil)
+      Self.deleteRefreshToken(provider, account: account)
+      Self.deleteRefreshToken(provider, account: nil)
       replyHandler(true, nil)
     default:
-      replyHandler(nil, "Unknown Google request \(op)")
+      replyHandler(nil, "Unknown sign-in request \(op)")
     }
   }
 
@@ -498,7 +587,8 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     let state = Self.randomURLSafe(16)
     let params = NWParameters.tcp
     params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
-    guard let listener = try? NWListener(using: params) else { return reply(nil, "Couldn't start Google sign-in") }
+    guard let listener = try? NWListener(using: params) else { return reply(nil, "Couldn't start sign-in") }
+    let provider = self.provider
     self.listener = listener
     redirectURI = ""
 
@@ -515,17 +605,20 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
       case .failure(let error):
         reply(nil, error.localizedDescription)
       case .success(let code):
-        Self.tokenRequest([
-          "grant_type": "authorization_code", "code": code, "client_id": clientId, "client_secret": secret,
+        var params = [
+          "grant_type": "authorization_code", "code": code, "client_id": clientId,
           "redirect_uri": self.redirectURI, "code_verifier": verifier,
-        ]) { result in
+        ]
+        if !secret.isEmpty { params["client_secret"] = secret }
+        if provider.scopeOnExchange { params["scope"] = provider.scope }
+        Self.tokenRequest(provider, params) { result in
           switch result {
           case .success(let json):
             NSApp.activate(ignoringOtherApps: true)
             let access = json["access_token"] as? String ?? ""
             // Which account signed in decides where its sign-in is kept.
-            Self.fetchEmail(accessToken: access) { email in
-              if let refresh = json["refresh_token"] as? String { Self.saveRefreshToken(refresh, account: email) }
+            Self.fetchEmail(provider, accessToken: access) { email in
+              if let refresh = json["refresh_token"] as? String { Self.saveRefreshToken(provider, refresh, account: email) }
               var out = Self.tokenReply(json)
               out["account"] = email ?? NSNull()
               reply(out, nil)
@@ -539,7 +632,7 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
 
     listener.newConnectionHandler = { [weak self] connection in
       guard let owner = self else { return connection.cancel() }
-      Self.receiveRedirect(on: connection, state: state) { [weak owner] result in owner?.finishSignIn?(result) }
+      Self.receiveRedirect(on: connection, state: state, place: provider.place) { [weak owner] result in owner?.finishSignIn?(result) }
     }
     listener.stateUpdateHandler = { [weak self] listenerState in
       DispatchQueue.main.async {
@@ -547,17 +640,17 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
         switch listenerState {
         case .ready:
           guard self.redirectURI.isEmpty, let port = listener.port?.rawValue else { return }
-          self.redirectURI = "http://127.0.0.1:\(port)"
-          var auth = URLComponents(string: "https://accounts.google.com/o/oauth2/v2/auth")!
-          auth.queryItems = [
-            "client_id": clientId, "redirect_uri": self.redirectURI, "response_type": "code", "scope": Self.scope,
+          self.redirectURI = "http://\(provider.loopbackHost):\(port)"
+          var auth = URLComponents(string: provider.authURL)!
+          let query = [
+            "client_id": clientId, "redirect_uri": self.redirectURI, "response_type": "code", "scope": provider.scope,
             "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
-            "access_type": "offline", "prompt": "consent",
-          ].map { URLQueryItem(name: $0.key, value: $0.value) }
+          ].merging(provider.authParams) { a, _ in a }
+          auth.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
           NSWorkspace.shared.open(auth.url!)
           DispatchQueue.main.asyncAfter(deadline: .now() + 300, execute: timeout)
         case .failed:
-          self.finishSignIn?(.failure(AuthError(errorDescription: "Couldn't start Google sign-in")))
+          self.finishSignIn?(.failure(AuthError(errorDescription: "Couldn't start sign-in")))
         default:
           break
         }
@@ -568,7 +661,7 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
 
   /// Answers the browser's redirect and reports the code; other requests (a favicon) get a 404.
   nonisolated private static func receiveRedirect(
-    on connection: NWConnection, state: String, done: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
+    on connection: NWConnection, state: String, place: String, done: @escaping @MainActor @Sendable (Result<String, Error>) -> Void
   ) {
     connection.start(queue: .global(qos: .userInitiated))
     connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { data, _, _, _ in
@@ -584,7 +677,7 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
       let value = { (name: String) in items.first { $0.name == name }?.value }
       let code = value("state") == state ? value("code") : nil
       let message = code != nil
-        ? "Signed in to Google Drive. You can close this tab and go back to Pinpad."
+        ? "Signed in to \(place). You can close this tab and go back to Pinpad."
         : "Sign-in was cancelled. You can close this tab."
       respond("200 OK", "<!doctype html><meta charset=\"utf-8\"><title>Pinpad</title><body style=\"font:16px system-ui;display:grid;place-items:center;height:90vh;color:#050038\">\(message)</body>")
       let cancelled = value("error") == "access_denied"
@@ -596,9 +689,9 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   nonisolated private static func tokenRequest(
-    _ params: [String: String], done: @escaping @MainActor @Sendable (Result<[String: Any], Error>) -> Void
+    _ provider: OAuthProvider, _ params: [String: String], done: @escaping @MainActor @Sendable (Result<[String: Any], Error>) -> Void
   ) {
-    var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!, timeoutInterval: 20)
+    var request = URLRequest(url: URL(string: provider.tokenURL)!, timeoutInterval: 20)
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     request.httpBody = Data(params.map { "\($0.key)=\(formEncode($0.value))" }.joined(separator: "&").utf8)
@@ -607,20 +700,20 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
       let failure = AuthError(
         errorDescription: json["error_description"] as? String ?? json["error"] as? String ?? error?.localizedDescription
-          ?? "Google sign-in failed (\(status))",
+          ?? "Sign-in failed (\(status))",
         code: json["error"] as? String)
       let result: Result<[String: Any], Error> = (200..<300).contains(status) ? .success(json) : .failure(failure)
       DispatchQueue.main.async { done(result) }
     }.resume()
   }
 
-  /// The signed-in account's email, from Google Drive.
-  nonisolated private static func fetchEmail(accessToken: String, done: @escaping @MainActor @Sendable (String?) -> Void) {
-    var request = URLRequest(url: URL(string: "https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)")!, timeoutInterval: 15)
+  /// The signed-in account's email, from Google Drive or Microsoft Graph.
+  nonisolated private static func fetchEmail(_ provider: OAuthProvider, accessToken: String, done: @escaping @MainActor @Sendable (String?) -> Void) {
+    var request = URLRequest(url: URL(string: provider.emailURL)!, timeoutInterval: 15)
     request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
     URLSession.shared.dataTask(with: request) { data, _, _ in
       let json = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-      let email = (json?["user"] as? [String: Any])?["emailAddress"] as? String
+      let email = provider.email(from: json)
       DispatchQueue.main.async { done(email) }
     }.resume()
   }
@@ -646,23 +739,23 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     return base64url(Data(bytes))
   }
 
-  /// One Keychain item per Google account ("refresh-token" alone is the older single sign-in).
-  nonisolated private static func keychainItem(account: String?) -> [String: Any] {
+  /// One Keychain item per account ("refresh-token" alone is the older single Google sign-in).
+  nonisolated private static func keychainItem(_ provider: OAuthProvider, account: String?) -> [String: Any] {
     [
-      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: keychainService,
+      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: provider.keychainService,
       kSecAttrAccount as String: account.map { "refresh-token:\($0)" } ?? "refresh-token",
     ]
   }
 
-  nonisolated private static func saveRefreshToken(_ token: String, account: String?) {
-    SecItemDelete(keychainItem(account: account) as CFDictionary)
-    var item = keychainItem(account: account)
+  nonisolated private static func saveRefreshToken(_ provider: OAuthProvider, _ token: String, account: String?) {
+    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
+    var item = keychainItem(provider, account: account)
     item[kSecValueData as String] = Data(token.utf8)
     SecItemAdd(item as CFDictionary, nil)
   }
 
-  nonisolated private static func loadRefreshToken(account: String?) -> String? {
-    var query = keychainItem(account: account)
+  nonisolated private static func loadRefreshToken(_ provider: OAuthProvider, account: String?) -> String? {
+    var query = keychainItem(provider, account: account)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
@@ -670,8 +763,8 @@ final class GoogleAuth: NSObject, WKScriptMessageHandlerWithReply {
     return String(data: data, encoding: .utf8)
   }
 
-  nonisolated private static func deleteRefreshToken(account: String?) {
-    SecItemDelete(keychainItem(account: account) as CFDictionary)
+  nonisolated private static func deleteRefreshToken(_ provider: OAuthProvider, account: String?) {
+    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
   }
 }
 
@@ -697,9 +790,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
     config.userContentController.addScriptMessageHandler(StorageBridge(), contentWorld: .page, name: "storage")
     config.userContentController.addUserScript(
       WKUserScript(source: StorageBridge.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-    config.userContentController.addScriptMessageHandler(GoogleAuth(), contentWorld: .page, name: "google")
-    config.userContentController.addUserScript(
-      WKUserScript(source: GoogleAuth.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    for provider in [OAuthProvider.google, .microsoft] {
+      config.userContentController.addScriptMessageHandler(OAuthBridge(provider: provider), contentWorld: .page, name: provider.name)
+      config.userContentController.addUserScript(
+        WKUserScript(source: OAuthBridge.script(provider), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
     config.userContentController.addUserScript(
       WKUserScript(source: ConsoleLogger.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
 

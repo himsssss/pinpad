@@ -5,6 +5,7 @@
  *
  *   Pinpad Workspace.json      index
  *   Home.json
+ *   Files/                     files attached to cards on Home
  *   Work/                      sidebar folder
  *     Project plan/            project
  *       Project plan.json
@@ -40,6 +41,8 @@ interface Index {
   folders: Record<string, Folder>;
   /** Board id to its file, relative to the storage folder, with / separators. */
   boards: Record<string, string>;
+  /** Attached file (FileEl.ref) to where it's kept; absent before files were kept in project folders. */
+  files?: Record<string, string>;
 }
 
 interface BoardFile {
@@ -64,7 +67,22 @@ export interface Layout {
   files: Map<string, string>;
   /** Board id to its relative path. */
   paths: Map<string, string>;
+  /** Attached file (FileEl.ref) to its relative path. */
+  attachments: Map<string, string>;
 }
+
+/**
+ * Attached files live in a "Files" folder in their project's folder (at the top level for
+ * Home), under their own names. Files of deleted projects and of templates wait in
+ * "Attachments". Neither name can be taken by a sidebar folder or project, and neither
+ * folder is ever read as boards.
+ */
+export const FILES_DIR = 'Files';
+export const HOLDING_DIR = 'Attachments';
+/** Whether a path is inside an attached files folder (or is one). */
+export const isAttachmentPath = (path: string) => path.split('/').some((part) => /^(files|attachments)$/i.test(part));
+/** Where a file attached before files were kept in project folders sits. */
+export const legacyAttachmentPath = (ref: string, name: string) => `${HOLDING_DIR}/${ref}${(/\.[a-z0-9]{1,8}$/i.exec(name)?.[0] ?? '').toLowerCase()}`;
 
 /** A title made safe as a file or folder name on macOS and Windows. */
 function safeName(title: string) {
@@ -92,7 +110,8 @@ type Take = (dir: string, base: string, ext?: string) => string;
 function namer(): Take {
   const used = new Map<string, Set<string>>();
   const take: Take = (dir, base, ext = '') => {
-    const names = used.get(dir) ?? new Set<string>();
+    // Every folder keeps the attached files folders' names free (see FILES_DIR).
+    const names = used.get(dir) ?? new Set<string>(['files', 'attachments']);
     used.set(dir, names);
     let name = base;
     for (let i = 2; names.has(`${name}${ext}`.toLowerCase()); i++) name = `${base} (${i})`;
@@ -102,8 +121,6 @@ function namer(): Take {
   take('', 'Pinpad Workspace', '.json');
   take('', 'Pinpad Trash', '.json');
   take('', 'Pinpad Templates', '.json');
-  // Attached files' folder (see attachments.ts); a sidebar folder can't take its name.
-  take('', 'Attachments');
   return take;
 }
 
@@ -163,6 +180,22 @@ export function layoutWorkspace(doc: Doc): Layout {
     else elementsByBoard.set(el.boardId, [el]);
   }
 
+  // Attached files, in a stable order so a name that's taken twice keeps its "(2)".
+  const attachments = new Map<string, string>();
+  const place = (el: El, dir: string) => {
+    if (el.type !== 'file' || !el.ref || attachments.has(el.ref)) return;
+    const ext = /\.[a-z0-9]{1,8}$/i.exec(el.name)?.[0] ?? '';
+    attachments.set(el.ref, take(dir, safeName(ext ? el.name.slice(0, -ext.length) : el.name), ext.toLowerCase()));
+  };
+  const byRef = (a: El, b: El) => (a.type === 'file' && b.type === 'file' ? a.ref.localeCompare(b.ref) : 0);
+  for (const el of Object.values(doc.elements).sort(byRef)) {
+    const board = doc.boards[el.boardId];
+    const project = board && projectOf(board);
+    place(el, join(project ? projectDirs.get(project)! : '', FILES_DIR));
+  }
+  const waiting = [...(doc.trash ?? []).flatMap((t) => t.elements), ...(doc.templates ?? []).flatMap((t) => t.elements)];
+  for (const el of waiting.sort(byRef)) place(el, HOLDING_DIR);
+
   const files = new Map<string, string>();
   for (const [id, path] of paths) {
     const file: BoardFile = { pinpad: FORMAT, board: doc.boards[id], elements: elementsByBoard.get(id) ?? [] };
@@ -172,8 +205,9 @@ export function layoutWorkspace(doc: Doc): Layout {
   if (doc.trash) files.set(TRASH_FILE, JSON.stringify(doc.trash));
   if (doc.templates) files.set(TEMPLATES_FILE, JSON.stringify(doc.templates));
   const index: Index = { pinpad: FORMAT, rootId: doc.rootId, folders: doc.folders, boards: Object.fromEntries(paths) };
+  if (attachments.size) index.files = Object.fromEntries(attachments);
   files.set(INDEX_FILE, JSON.stringify(index, null, 2));
-  return { files, paths };
+  return { files, paths, attachments };
 }
 
 /**
@@ -198,7 +232,7 @@ export async function readWorkspace(
   index: Index,
   listing: Listed[] | null,
   read: Read,
-): Promise<{ doc: Doc; files: Map<string, string>; paths: Map<string, string> }> {
+): Promise<{ doc: Doc; files: Map<string, string>; paths: Map<string, string>; attachments: Map<string, string> }> {
   const found = new Map<string, { path: string; text: string; file: BoardFile }>();
   /** Files the index names must be board files; others are only looked through. */
   const consider = (path: string, text: string, expected?: string) => {
@@ -264,7 +298,15 @@ export async function readWorkspace(
   if (texts[TRASH_FILE] != null) files.set(TRASH_FILE, texts[TRASH_FILE]!);
   if (texts[TEMPLATES_FILE] != null) files.set(TEMPLATES_FILE, texts[TEMPLATES_FILE]!);
   if (listing) followRenames(doc, index, paths, listing);
-  return { doc, files, paths };
+  return { doc, files, paths, attachments: attachmentsOnDisk(doc, index) };
+}
+
+/** Where each attached file is now: as the index records, or where files were kept before. */
+function attachmentsOnDisk(doc: Doc, index: Index) {
+  const out = new Map<string, string>(Object.entries(index.files ?? {}));
+  const all = [...Object.values(doc.elements), ...(doc.trash ?? []).flatMap((t) => t.elements), ...(doc.templates ?? []).flatMap((t) => t.elements)];
+  for (const el of all) if (el.type === 'file' && el.ref && !out.has(el.ref)) out.set(el.ref, legacyAttachmentPath(el.ref, el.name));
+  return out;
 }
 
 /** Deletes boards whose files are gone, the cards that open them, and boards only reachable through them. */

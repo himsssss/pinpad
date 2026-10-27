@@ -134,13 +134,15 @@ function resolveInside(folder, relative) {
   return path.join(folder, ...parts);
 }
 
-/** A page-supplied path to an attached file: only inside the Attachments folder. */
+/** Folders that hold attached files (a project's "Files", and "Attachments"); never boards. */
+const ATTACHMENT_DIR = /^(files|attachments)$/i;
+
+/** A page-supplied path to an attached file: only directly inside a Files or Attachments folder. */
 function resolveAttachment(folder, relative) {
   const parts = String(relative).split('/');
-  if (parts.length !== 2 || parts[0] !== 'Attachments' || !parts[1] || parts[1].startsWith('.') || /[\\:]/.test(parts[1])) {
-    throw new Error(`Bad attachment path ${relative}`);
-  }
-  return path.join(folder, 'Attachments', parts[1]);
+  const bad = parts.length < 2 || parts.some((p) => !p || p.startsWith('.') || /[\\:]/.test(p)) || !ATTACHMENT_DIR.test(parts.at(-2));
+  if (bad) throw new Error(`Bad attachment path ${relative}`);
+  return path.join(folder, ...parts);
 }
 
 /** Removes folders left empty by a moved or deleted board, up to the storage folder. */
@@ -164,7 +166,7 @@ async function listFolder(folder) {
       if (out.length >= 5000) return;
       if (entry.name.startsWith('.') || /[\\:]/.test(entry.name)) continue;
       // Files attached to cards, not boards; the page reads them one at a time.
-      if (!rel && entry.name === 'Attachments') continue;
+      if (entry.isDirectory() && ATTACHMENT_DIR.test(entry.name)) continue;
       const relPath = rel ? `${rel}/${entry.name}` : entry.name;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -208,6 +210,24 @@ async function storage(event, op, arg) {
     case 'readFile': {
       const file = resolveAttachment(folder, arg);
       return (await exists(file)) ? (await fs.readFile(file)).toString('base64') : null;
+    }
+    case 'moveFile': {
+      // An attached file follows its card or project to another folder.
+      const from = resolveAttachment(folder, arg.from);
+      const to = resolveAttachment(folder, arg.to);
+      if (!(await exists(from))) return false;
+      await fs.mkdir(path.dirname(to), { recursive: true });
+      await fs.rename(from, to);
+      await pruneEmpty(folder, from);
+      return true;
+    }
+    case 'trashFile': {
+      const file = resolveAttachment(folder, arg);
+      if (await exists(file)) {
+        await shell.trashItem(file);
+        await pruneEmpty(folder, file);
+      }
+      return true;
     }
     case 'write': {
       // Each file is written beside itself and swapped in, so a crash never leaves half a board.
@@ -256,54 +276,88 @@ async function storage(event, op, arg) {
 }
 
 /**
- * Google sign-in for saving boards to Google Drive, using Google's flow for installed apps:
- * the system browser opens Google's consent page, which redirects back to a one-off loopback
- * address with a code (PKCE). The refresh token is kept encrypted in the app's data folder so
- * later launches get access tokens without asking again. Mirrors GoogleAuth in macos/main.swift.
+ * Sign-in for saving boards to Google Drive or OneDrive, using the providers' flow for
+ * installed apps: the system browser opens the consent page, which redirects back to a
+ * one-off loopback address with a code (PKCE). The refresh token is kept encrypted in the
+ * app's data folder so later launches get access tokens without asking again. Mirrors
+ * OAuthBridge in macos/main.swift.
  */
-const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
-/** One encrypted file per Google account; google-token.bin is the older single sign-in. */
-const googleTokenPath = (account) =>
-  path.join(app.getPath('userData'), account ? `google-token-${crypto.createHash('sha256').update(account).digest('hex').slice(0, 16)}.bin` : 'google-token.bin');
+const PROVIDERS = {
+  google: {
+    place: 'Google Drive',
+    authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+    tokenUrl: 'https://oauth2.googleapis.com/token',
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    authParams: { access_type: 'offline', prompt: 'consent' },
+    scopeOnExchange: false,
+    revokeUrl: 'https://oauth2.googleapis.com/revoke?token=',
+    // Microsoft only accepts "localhost" for installed apps' loopback addresses.
+    loopbackHost: '127.0.0.1',
+    emailUrl: 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)',
+    email: (json) => json.user?.emailAddress ?? null,
+    tokenFile: 'google-token',
+  },
+  microsoft: {
+    place: 'OneDrive',
+    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    scope: 'offline_access User.Read Files.ReadWrite.AppFolder',
+    authParams: { prompt: 'select_account', response_mode: 'query' },
+    scopeOnExchange: true,
+    revokeUrl: null,
+    loopbackHost: 'localhost',
+    emailUrl: 'https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName',
+    email: (json) => (json.mail || json.userPrincipalName || '').toLowerCase() || null,
+    tokenFile: 'microsoft-token',
+  },
+};
+/** One encrypted file per account; google-token.bin is the older single Google sign-in. */
+const tokenPath = (provider, account) =>
+  path.join(
+    app.getPath('userData'),
+    account ? `${provider.tokenFile}-${crypto.createHash('sha256').update(account).digest('hex').slice(0, 16)}.bin` : `${provider.tokenFile}.bin`,
+  );
 const base64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 let pendingSignIn = null;
 
-async function saveRefreshToken(token, account) {
+async function saveRefreshToken(provider, token, account) {
   const data = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(token) : Buffer.from(token);
-  await fs.writeFile(googleTokenPath(account), data);
+  await fs.writeFile(tokenPath(provider, account), data);
 }
 
-async function loadRefreshToken(account) {
+async function loadRefreshToken(provider, account) {
   try {
-    const data = await fs.readFile(googleTokenPath(account));
+    const data = await fs.readFile(tokenPath(provider, account));
     return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(data) : data.toString();
   } catch {
     return null;
   }
 }
 
-async function googleTokenRequest(params) {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+async function tokenRequest(provider, params) {
+  const body = Object.fromEntries(Object.entries(params).filter(([, v]) => v));
+  if (provider.scopeOnExchange) body.scope = provider.scope;
+  const res = await fetch(provider.tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params),
+    body: new URLSearchParams(body),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(json.error_description || json.error || `Google sign-in failed (${res.status})`), { code: json.error });
+  if (!res.ok) throw Object.assign(new Error(json.error_description || json.error || `Sign-in failed (${res.status})`), { code: json.error });
   return json;
 }
 
 const signInPage = (message) =>
   `<!doctype html><meta charset="utf-8"><title>Pinpad</title><body style="font:16px system-ui;display:grid;place-items:center;height:90vh;color:#050038">${message}</body>`;
 
-async function googleSignIn({ clientId, clientSecret }) {
+async function oauthSignIn(provider, { clientId, clientSecret }) {
   pendingSignIn?.(new Error('Sign-in was restarted'));
   const verifier = base64url(crypto.randomBytes(32));
   const challenge = base64url(crypto.createHash('sha256').update(verifier).digest());
   const state = base64url(crypto.randomBytes(16));
   const server = http.createServer();
   await new Promise((resolve, reject) => server.once('error', reject).listen(0, '127.0.0.1', resolve));
-  const redirectUri = `http://127.0.0.1:${server.address().port}`;
+  const redirectUri = `http://${provider.loopbackHost}:${server.address().port}`;
   try {
     const code = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Sign-in timed out')), 5 * 60 * 1000);
@@ -313,27 +367,26 @@ async function googleSignIn({ clientId, clientSecret }) {
         if (url.pathname !== '/') return res.writeHead(404).end();
         const ok = url.searchParams.get('state') === state && url.searchParams.get('code');
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-          .end(signInPage(ok ? 'Signed in to Google Drive. You can close this tab and go back to Pinpad.' : 'Sign-in was cancelled. You can close this tab.'));
+          .end(signInPage(ok ? `Signed in to ${provider.place}. You can close this tab and go back to Pinpad.` : 'Sign-in was cancelled. You can close this tab.'));
         clearTimeout(timer);
         if (ok) resolve(url.searchParams.get('code'));
         else reject(new Error(url.searchParams.get('error') === 'access_denied' ? 'Sign-in was cancelled' : 'Sign-in failed'));
       });
-      const auth = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      const auth = new URL(provider.authUrl);
       for (const [k, v] of Object.entries({
-        client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: GOOGLE_SCOPE, state,
-        code_challenge: challenge, code_challenge_method: 'S256', access_type: 'offline', prompt: 'consent',
+        client_id: clientId, redirect_uri: redirectUri, response_type: 'code', scope: provider.scope, state,
+        code_challenge: challenge, code_challenge_method: 'S256', ...provider.authParams,
       })) auth.searchParams.set(k, v);
       shell.openExternal(auth.toString());
     });
-    const tokens = await googleTokenRequest({
+    const tokens = await tokenRequest(provider, {
       grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, code_verifier: verifier,
     });
     // Which account signed in decides where its sign-in is kept.
-    const about = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', {
-      headers: { Authorization: `Bearer ${tokens.access_token}` },
-    }).then((r) => r.json()).catch(() => ({}));
-    const account = about.user?.emailAddress ?? null;
-    if (tokens.refresh_token) await saveRefreshToken(tokens.refresh_token, account);
+    const about = await fetch(provider.emailUrl, { headers: { Authorization: `Bearer ${tokens.access_token}` } })
+      .then((r) => r.json()).catch(() => ({}));
+    const account = provider.email(about);
+    if (tokens.refresh_token) await saveRefreshToken(provider, tokens.refresh_token, account);
     BrowserWindow.getAllWindows()[0]?.focus();
     return { accessToken: tokens.access_token, expiresIn: tokens.expires_in, account };
   } finally {
@@ -342,29 +395,32 @@ async function googleSignIn({ clientId, clientSecret }) {
   }
 }
 
-async function google(_event, op, arg) {
+async function oauth(name, op, arg) {
+  const provider = PROVIDERS[name];
   switch (op) {
     case 'signIn':
-      return googleSignIn(arg);
+      return oauthSignIn(provider, arg);
     case 'token': {
       const account = arg.account ?? null;
-      let refresh = await loadRefreshToken(account);
+      let refresh = await loadRefreshToken(provider, account);
       // A sign-in saved before accounts were kept apart moves to the first account that asks.
       if (!refresh && account) {
-        refresh = await loadRefreshToken(null);
+        refresh = await loadRefreshToken(provider, null);
         if (refresh) {
-          await saveRefreshToken(refresh, account);
-          await fs.rm(googleTokenPath(null), { force: true });
+          await saveRefreshToken(provider, refresh, account);
+          await fs.rm(tokenPath(provider, null), { force: true });
         }
       }
       if (!refresh) return null;
       try {
-        const tokens = await googleTokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: arg.clientId, client_secret: arg.clientSecret });
+        const tokens = await tokenRequest(provider, { grant_type: 'refresh_token', refresh_token: refresh, client_id: arg.clientId, client_secret: arg.clientSecret });
+        // Microsoft replaces the refresh token each time; the old one stops working.
+        if (tokens.refresh_token) await saveRefreshToken(provider, tokens.refresh_token, account);
         return { accessToken: tokens.access_token, expiresIn: tokens.expires_in };
       } catch (err) {
         // A revoked or expired grant means signing in again; anything else (offline) is retried later.
         if (err.code === 'invalid_grant') {
-          await fs.rm(googleTokenPath(account), { force: true });
+          await fs.rm(tokenPath(provider, account), { force: true });
           return null;
         }
         throw err;
@@ -372,14 +428,14 @@ async function google(_event, op, arg) {
     }
     case 'signOut': {
       const account = arg?.account ?? null;
-      const refresh = (await loadRefreshToken(account)) ?? (await loadRefreshToken(null));
-      await fs.rm(googleTokenPath(account), { force: true });
-      await fs.rm(googleTokenPath(null), { force: true });
-      if (refresh) await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(refresh)}`, { method: 'POST' }).catch(() => {});
+      const refresh = (await loadRefreshToken(provider, account)) ?? (await loadRefreshToken(provider, null));
+      await fs.rm(tokenPath(provider, account), { force: true });
+      await fs.rm(tokenPath(provider, null), { force: true });
+      if (refresh && provider.revokeUrl) await fetch(`${provider.revokeUrl}${encodeURIComponent(refresh)}`, { method: 'POST' }).catch(() => {});
       return true;
     }
     default:
-      throw new Error(`Unknown Google request ${op}`);
+      throw new Error(`Unknown sign-in request ${op}`);
   }
 }
 
@@ -478,7 +534,8 @@ app.whenReady().then(async () => {
   protocol.handle(SCHEME, serveBundle);
   ipcMain.handle('pinpad:fetch-page', fetchPage);
   ipcMain.handle('pinpad:storage', storage);
-  ipcMain.handle('pinpad:google', google);
+  ipcMain.handle('pinpad:google', (_event, op, arg) => oauth('google', op, arg));
+  ipcMain.handle('pinpad:microsoft', (_event, op, arg) => oauth('microsoft', op, arg));
   embedBase = await startEmbedServer();
   ipcMain.on('pinpad:embed-base', (event) => {
     event.returnValue = embedBase;

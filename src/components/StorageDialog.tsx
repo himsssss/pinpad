@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-react';
-import { afterSignIn, switchStorage, usingDrive, useStore, type StorageTarget } from '../store';
+import { afterSignIn, cloudInUse, switchStorage, useStore, type StorageTarget } from '../store';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
+import { oneDriveStorage } from '../oneDriveStorage';
 import { DriveIcon } from './DriveIcon';
+import { OneDriveIcon } from './OneDriveIcon';
+import { microsoftAccount, microsoftAllowedHere, microsoftConfigured, microsoftSignIn, microsoftSignOut, microsoftWebOrigins } from '../microsoftAuth';
 import { googleAccount, googleAllowedHere, googleConfigured, googleWebOrigins, preloadGoogle, signIn, signOut } from '../googleAuth';
 
 const isMac = /Mac/.test(navigator.platform);
@@ -14,25 +17,29 @@ const listOf = (items: string[]) => (items.length > 1 ? `${items.slice(0, -1).jo
 
 /**
  * Shows where boards are saved and moves them: a folder on this computer (desktop apps), this
- * browser (website), or Google Drive. Switching never deletes the old copy; when the new place
+ * browser (website), Google Drive or OneDrive. Switching never deletes the old copy; when the new place
  * already holds a workspace the user chooses whether to open it or replace it.
  */
 export function StorageDialog({ onClose }: { onClose: () => void }) {
   const storage = nativeStorage();
   const storageError = useStore((s) => s.storageError);
   const [location, setLocation] = useState<StorageLocation | null>(null);
-  const [drive, setDrive] = useState(usingDrive());
-  const [tab, setTab] = useState<'local' | 'drive'>(usingDrive() ? 'drive' : 'local');
+  const [cloud, setCloud] = useState(cloudInUse());
+  const drive = cloud === 'drive';
+  const onedrive = cloud === 'onedrive';
+  const [tab, setTab] = useState<'local' | 'drive' | 'onedrive'>(cloud ?? 'local');
   const [account, setAccount] = useState(googleAccount());
+  const [msAccount, setMsAccount] = useState(microsoftAccount());
   // A place that already has a workspace, waiting for the user to pick open or replace.
   const [conflict, setConflict] = useState<StorageTarget | null>(null);
-  const [signOutAfter, setSignOutAfter] = useState(false);
+  const [signOutAfter, setSignOutAfter] = useState<'google' | 'microsoft' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
-    setDrive(usingDrive());
+    setCloud(cloudInUse());
     setAccount(googleAccount());
+    setMsAccount(microsoftAccount());
     if (storage) setLocation(await storage.location());
   };
   useEffect(() => {
@@ -60,15 +67,16 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
   const moveTo = async (target: StorageTarget) => {
     if (target.kind === 'folder' && storage) {
       const dir = target.folder ?? location?.defaultFolder;
-      if (!dir || (!drive && dir === location?.folder)) return false;
+      if (!dir || (!cloud && dir === location?.folder)) return false;
       if ((await storage.inspect(dir)).hasWorkspace) {
         setConflict(target);
         return false;
       }
     }
-    if (target.kind === 'drive') {
-      driveStorage.reset();
-      if (await driveStorage.hasWorkspace()) {
+    if (target.kind === 'drive' || target.kind === 'onedrive') {
+      const storage = target.kind === 'drive' ? driveStorage : oneDriveStorage;
+      storage.reset();
+      if (await storage.hasWorkspace()) {
         setConflict(target);
         return false;
       }
@@ -81,8 +89,9 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
     run(async () => {
       await switchStorage(conflict!, keep);
       setConflict(null);
-      if (signOutAfter) await signOut();
-      setSignOutAfter(false);
+      if (signOutAfter === 'google') await signOut();
+      if (signOutAfter === 'microsoft') await microsoftSignOut();
+      setSignOutAfter(null);
     });
 
   const changeFolder = () =>
@@ -100,23 +109,31 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
       await moveTo({ kind: 'drive' });
     });
 
-  // Back to this computer or browser; the Google sign-in is dropped once the boards have moved.
-  const disconnect = () =>
+  const connectOneDrive = () =>
     run(async () => {
-      setSignOutAfter(true);
+      await microsoftSignIn();
+      await moveTo({ kind: 'onedrive' });
+    });
+
+  // Back to this computer or browser; the sign-in is dropped once the boards have moved.
+  const disconnect = (service: 'google' | 'microsoft') =>
+    run(async () => {
+      setSignOutAfter(service);
       if (await moveTo(local)) {
-        await signOut();
-        setSignOutAfter(false);
+        await (service === 'google' ? signOut() : microsoftSignOut());
+        setSignOutAfter(null);
       }
     });
 
   const signInAgain = () =>
     run(async () => {
-      await signIn();
+      await (onedrive ? microsoftSignIn() : signIn());
       await afterSignIn();
     });
 
-  const conflictPlace = conflict?.kind === 'drive' ? 'Your Google Drive' : 'That folder';
+  const conflictPlace = conflict?.kind === 'drive' ? 'Your Google Drive' : conflict?.kind === 'onedrive' ? 'Your OneDrive' : 'That folder';
+  const cloudName = drive ? 'Google Drive' : 'OneDrive';
+  const oneDriveHere = microsoftConfigured() && microsoftAllowedHere();
   // Google only lets the website sign in from its registered addresses.
   const driveHere = googleConfigured() && googleAllowedHere();
   const driveSite = googleWebOrigins().find((o) => o.startsWith('https://'));
@@ -132,12 +149,18 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
         <div className="segmented" role="tablist" aria-label="Where to save">
           <button role="tab" aria-selected={tab === 'local'} onClick={() => setTab('local')}>
             <HardDrive size={15} /> {storage ? 'This computer' : 'This browser'}
-            {!drive && <span className="segmented-badge">In use</span>}
+            {!cloud && <span className="segmented-badge">In use</span>}
           </button>
           <button role="tab" aria-selected={tab === 'drive'} onClick={() => setTab('drive')}>
             <DriveIcon /> Google Drive
             {drive && <span className="segmented-badge">In use</span>}
           </button>
+          {microsoftConfigured() && (
+            <button role="tab" aria-selected={tab === 'onedrive'} onClick={() => setTab('onedrive')}>
+              <OneDriveIcon /> OneDrive
+              {onedrive && <span className="segmented-badge">In use</span>}
+            </button>
+          )}
         </div>
 
         {tab === 'local' && storage && (
@@ -152,7 +175,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 <div className="storage-folder">{location?.folder ?? '…'}</div>
                 <div className="storage-file">
                   {location?.isDefault ? 'Default folder' : 'Chosen folder'}
-                  {drive ? ' · not in use while saving to Google Drive' : ''}
+                  {cloud ? ` · not in use while saving to ${cloudName}` : ''}
                 </div>
               </div>
             </div>
@@ -161,8 +184,8 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
 
         {tab === 'local' && !storage && (
           <p className="dialog-text">
-            Boards are saved in this browser only, so clearing its site data deletes them. Save to Google Drive, or
-            use Export now and then, to keep a copy.
+            Boards are saved in this browser only, so clearing its site data deletes them. Save to Google Drive or
+            OneDrive, or use Export now and then, to keep a copy.
           </p>
         )}
 
@@ -197,6 +220,33 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
           </>
         )}
 
+        {tab === 'onedrive' && microsoftConfigured() && !microsoftAllowedHere() && (
+          <p className="dialog-text">
+            Microsoft only lets Pinpad sign in from {listOf(microsoftWebOrigins().map((o) => o.replace(/^https?:\/\//, '')))}, but this
+            copy is open at {window.location.host}.
+          </p>
+        )}
+
+        {tab === 'onedrive' && oneDriveHere && (
+          <>
+            <p className="dialog-text">
+              Save each board as a file in your OneDrive, in Apps › Pinpad, and open them on any computer by signing in
+              with your Microsoft account. Pinpad can only see its own folder there.
+            </p>
+            {onedrive && (
+              <div className="storage-path">
+                <OneDriveIcon />
+                <div>
+                  <div className="storage-folder">OneDrive › Apps › Pinpad</div>
+                  <div className="storage-file">
+                    {storageError ? `Last signed in as ${msAccount ?? 'your Microsoft account'}` : msAccount ? `Signed in as ${msAccount}` : 'Signed in'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
         {(error || storageError) && (
           <div className="dialog-error" role="alert">
             <AlertTriangle size={16} aria-hidden="true" />
@@ -208,7 +258,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
           <div className="storage-conflict">
             <p><strong>{conflictPlace} already has a Pinpad workspace.</strong> Open it, or replace it with the boards you have now?</p>
             <div className="dialog-actions">
-              <button className="btn-secondary" disabled={busy} onClick={() => { setConflict(null); setSignOutAfter(false); }}>Cancel</button>
+              <button className="btn-secondary" disabled={busy} onClick={() => { setConflict(null); setSignOutAfter(null); }}>Cancel</button>
               <button className="btn-secondary danger" disabled={busy} onClick={() => resolve('replace')}>Replace it</button>
               <button className="btn-primary" disabled={busy} onClick={() => resolve('open')}>Open it</button>
             </div>
@@ -218,25 +268,25 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
             {tab === 'local' && storage && (
               <>
                 <button className="btn-secondary" disabled={busy} onClick={() => storage.reveal()}>Show in {fileManager}</button>
-                {location && !location.isDefault && !drive && (
+                {location && !location.isDefault && !cloud && (
                   <button className="btn-secondary" disabled={busy} onClick={() => run(() => moveTo({ kind: 'folder', folder: null }))}>
                     Use default folder
                   </button>
                 )}
-                {drive && (
+                {cloud && (
                   <button className="btn-secondary" disabled={busy} onClick={() => run(() => moveTo(thisFolder))}>Save here instead</button>
                 )}
                 <button className="btn-primary" disabled={busy} onClick={changeFolder}>Change folder…</button>
               </>
             )}
-            {tab === 'local' && !storage && drive && (
+            {tab === 'local' && !storage && cloud && (
               <button className="btn-primary" disabled={busy} onClick={() => run(() => switchStorage({ kind: 'browser' }, 'replace'))}>
                 Keep boards in this browser instead
               </button>
             )}
             {tab === 'drive' && driveHere && drive && (
               <>
-                <button className="btn-secondary" disabled={busy} onClick={disconnect}>Disconnect</button>
+                <button className="btn-secondary" disabled={busy} onClick={() => disconnect('google')}>Disconnect</button>
                 {driveStorage.folderUrl() && (
                   <button className="btn-secondary" disabled={busy} onClick={() => window.open(driveStorage.folderUrl()!, '_blank')}>
                     <ExternalLink size={14} /> Open in Google Drive
@@ -248,6 +298,22 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
             {tab === 'drive' && driveHere && !drive && (
               <button className="btn-primary" disabled={busy} onClick={connect}>
                 {busy ? 'Waiting for Google…' : 'Connect Google Drive'}
+              </button>
+            )}
+            {tab === 'onedrive' && oneDriveHere && onedrive && (
+              <>
+                <button className="btn-secondary" disabled={busy} onClick={() => disconnect('microsoft')}>Disconnect</button>
+                {oneDriveStorage.folderUrl() && (
+                  <button className="btn-secondary" disabled={busy} onClick={() => window.open(oneDriveStorage.folderUrl()!, '_blank')}>
+                    <ExternalLink size={14} /> Open in OneDrive
+                  </button>
+                )}
+                {storageError && <button className="btn-primary" disabled={busy} onClick={signInAgain}>Sign in again</button>}
+              </>
+            )}
+            {tab === 'onedrive' && oneDriveHere && !onedrive && (
+              <button className="btn-primary" disabled={busy} onClick={connectOneDrive}>
+                {busy ? 'Waiting for Microsoft…' : 'Connect OneDrive'}
               </button>
             )}
           </div>

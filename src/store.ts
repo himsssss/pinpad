@@ -4,9 +4,11 @@ import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { blankDoc, deleteElements, seedDoc } from './doc';
 import { purgeOldTrash } from './projectActions';
-import { cacheAll, queueAll, uploadPending, uploadsPending } from './attachments';
+import { cacheAll, moveAttachment, settlePending, storeAttachment, trashAttachment, uploadsPending } from './attachments';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
+import { oneDriveStorage } from './oneDriveStorage';
+import { microsoftAccount } from './microsoftAuth';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
@@ -208,34 +210,51 @@ type Backend = Pick<NativeStorage, 'read' | 'list'> & {
   /** Google Drive reports each file done; the desktop apps write a batch in one go. */
   write(batch: StorageBatch, onProgress?: (done: number) => void): Promise<boolean>;
 };
-export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'browser' };
+export type StorageTarget = { kind: 'folder'; folder: string | null } | { kind: 'drive' } | { kind: 'onedrive' } | { kind: 'browser' };
+type Cloud = 'drive' | 'onedrive';
 
-/** Per device: whether this computer or browser keeps its boards in Google Drive. */
+/** Per device: whether this computer or browser keeps its boards in Google Drive or OneDrive. */
 const MODE_KEY = 'pinpad:storage';
-export function usingDrive() {
+export function cloudInUse(): Cloud | null {
   try {
-    return localStorage.getItem(MODE_KEY) === 'drive';
+    const mode = localStorage.getItem(MODE_KEY);
+    return mode === 'drive' || mode === 'onedrive' ? mode : null;
   } catch {
-    return false;
+    return null;
   }
 }
-function setUsingDrive(on: boolean) {
+export const usingDrive = () => cloudInUse() === 'drive';
+export const usingOneDrive = () => cloudInUse() === 'onedrive';
+function setCloud(cloud: Cloud | null) {
   try {
-    if (on) localStorage.setItem(MODE_KEY, 'drive');
+    if (cloud) localStorage.setItem(MODE_KEY, cloud);
     else localStorage.removeItem(MODE_KEY);
   } catch {
     // Without storage the choice lasts for this session only.
   }
 }
+/** The storage for a cloud place. */
+const cloudStorage = (cloud: Cloud) => (cloud === 'drive' ? driveStorage : oneDriveStorage);
 /**
  * This device's copy of the open workspace (IndexedDB) is kept per Google account, so
  * switching accounts never shows one account's boards in another's place. Browser-only
  * storage and the desktop apps' folders keep the original key.
  */
-const docKey = () => (usingDrive() ? `doc:drive:${googleAccount() ?? ''}` : 'doc');
+const docKey = () => {
+  const cloud = cloudInUse();
+  if (cloud === 'drive') return `doc:drive:${googleAccount() ?? ''}`;
+  if (cloud === 'onedrive') return `doc:onedrive:${microsoftAccount() ?? ''}`;
+  return 'doc';
+};
 
-const currentBackend = (): Backend | undefined => (usingDrive() ? driveStorage : nativeStorage());
-const placeName = () => (usingDrive() ? 'Google Drive' : 'your storage folder');
+const currentBackend = (): Backend | undefined => {
+  const cloud = cloudInUse();
+  return cloud ? cloudStorage(cloud) : nativeStorage();
+};
+const placeName = () => {
+  const cloud = cloudInUse();
+  return cloud === 'drive' ? 'Google Drive' : cloud === 'onedrive' ? 'OneDrive' : 'your storage folder';
+};
 
 let backend: Backend | undefined;
 /** Set when the saved files exist but couldn't be read, so they're never overwritten. */
@@ -254,8 +273,11 @@ let blockedDoc: Doc | null = null;
 let starting: Doc | null = null;
 let startup: Promise<void> = Promise.resolve();
 /** The files as of the last successful save, so each save writes only what changed. */
-let onDisk: Layout = { files: new Map(), paths: new Map() };
-const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
+let onDisk: Layout = { files: new Map(), paths: new Map(), attachments: new Map() };
+const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map(), attachments: new Map() });
+
+/** Where an attached file is kept in the storage now, as of the last read or save. */
+export const attachmentLocation = (ref: string) => onDisk.attachments.get(ref) ?? null;
 /** What the storage listed after the last read or save; anything else was changed outside Pinpad. */
 let seen: Map<string, number> | null = null;
 const snapshot = (listing: Listed[]) => new Map(listing.map((f) => [f.path, f.modified]));
@@ -289,22 +311,70 @@ function changesTo(next: Layout): StorageBatch {
   return { write, remove, trash };
 }
 
+/** Attached files to move (their card or project moved), upload (new here) and trash (card gone). */
+function attachmentChanges(next: Layout) {
+  const move: [string, string, string][] = [];
+  const upload: [string, string][] = [];
+  const trash: [string, string][] = [];
+  for (const [ref, to] of next.attachments) {
+    const from = onDisk.attachments.get(ref);
+    if (from === undefined) upload.push([ref, to]);
+    else if (from !== to) move.push([ref, from, to]);
+  }
+  for (const [ref, from] of onDisk.attachments) if (!next.attachments.has(ref)) trash.push([ref, from]);
+  return { move, upload, trash };
+}
+
 function writeFiles(doc: Doc) {
   const target = backend;
+  // Kept only in this browser: there's nowhere else for files to go.
+  if (!target) settlePending(() => true);
   if (!target || fileBlocked || starting) return writing;
   writesPending++;
   writing = writing.then(async () => {
     const next = layoutWorkspace(doc);
     const batch = changesTo(next);
-    if (!batch.write.length && !batch.remove.length && !batch.trash.length) return;
-    const total = batch.write.length + batch.remove.length + batch.trash.length;
+    const files = attachmentChanges(next);
+    const fileCount = files.move.length + files.upload.length + files.trash.length;
+    if (!batch.write.length && !batch.remove.length && !batch.trash.length && !fileCount) return;
+    const total = batch.write.length + batch.remove.length + batch.trash.length + fileCount;
+    let done = 0;
+    const step = () => setState({ saveProgress: ++done / total });
     setState({ saveProgress: 0 });
     try {
-      await target.write(batch, (done) => setState({ saveProgress: done / total }));
+      // Files first, so the index never points at a file that isn't there yet. Removed files
+      // go first, freeing their names; a file moving onto a name another file still has (two
+      // files trading names) steps aside to a temporary name first.
+      for (const [ref, from] of files.trash) {
+        await trashAttachment(ref, from);
+        step();
+      }
+      const taken = new Set(
+        [...onDisk.attachments].filter(([ref]) => next.attachments.has(ref)).map(([, path]) => path.toLowerCase()),
+      );
+      const moves = files.move.map(([ref, from, to]) => ({ ref, from, to }));
+      if (moves.some((m) => taken.has(m.to.toLowerCase()))) {
+        for (const m of moves) {
+          const aside = `${m.from.slice(0, m.from.lastIndexOf('/') + 1)}~${m.ref.slice(0, 8)}-${m.to.slice(m.to.lastIndexOf('/') + 1)}`;
+          if (await moveAttachment(m.from, aside)) m.from = aside;
+        }
+      }
+      // A file missing from where it was is uploaded from this device's copy, if there is one.
+      for (const { ref, from, to } of moves) {
+        if (!(await moveAttachment(from, to))) await storeAttachment(ref, to);
+        step();
+      }
+      for (const [ref, to] of files.upload) {
+        await storeAttachment(ref, to);
+        step();
+      }
+      const before = done;
+      await target.write(batch, (n) => setState({ saveProgress: (before + n) / total }));
       onDisk = next;
+      // Saved, or no longer on any board.
+      const inUse = new Set(Object.values(state.doc.elements).flatMap((e) => (e.type === 'file' ? [e.ref] : [])));
+      settlePending((ref) => next.attachments.has(ref) || !inUse.has(ref));
       setState({ saveProgress: null, ...(state.storageError ? { storageError: null } : {}) });
-      // Storage is reachable again: send any files still waiting.
-      if (uploadsPending()) uploadPending();
     } catch (err) {
       // onDisk stays as it was, so the next save retries everything that didn't go through.
       setState({
@@ -326,13 +396,15 @@ function writeFiles(doc: Doc) {
 }
 
 /**
- * After Google sign-in is renewed: saves what's waiting, or, when the boards in Drive
- * couldn't be read before, opens them (they're the saved copy).
+ * After Google or Microsoft sign-in is renewed: saves what's waiting, or, when the boards
+ * there couldn't be read before, opens them (they're the saved copy).
  */
 export async function afterSignIn() {
   if (!fileBlocked) return retrySave();
-  driveStorage.reset();
-  await switchStorage({ kind: 'drive' }, (await driveStorage.hasWorkspace()) ? 'open' : 'replace');
+  const cloud = cloudInUse() ?? 'drive';
+  const storage = cloudStorage(cloud);
+  storage.reset();
+  await switchStorage({ kind: cloud }, (await storage.hasWorkspace()) ? 'open' : 'replace');
 }
 
 /** Saves the current boards again after a failure (say, once Google sign-in is renewed). */
@@ -352,9 +424,9 @@ async function readFiles(from: Backend, listing?: Listed[]): Promise<{ doc: Doc;
   const parsed = parseIndex(indexText);
   // The earlier single-file format: the next save splits it into board files.
   if ('doc' in parsed) return { doc: parsed.doc, disk: nothingOnDisk() };
-  const { doc, files, paths } = await readWorkspace(parsed.index, listing, (p) => from.read(p));
+  const { doc, files, paths, attachments } = await readWorkspace(parsed.index, listing, (p) => from.read(p));
   files.set(INDEX_FILE, indexText);
-  return { doc, disk: { files, paths } };
+  return { doc, disk: { files, paths, attachments } };
 }
 
 const sameFiles = (a: Layout, b: Layout) =>
@@ -458,7 +530,7 @@ export async function unsavedReason(): Promise<string | null> {
   }
   const error = state.storageError;
   if (error && !error.startsWith(SYNC_ERROR)) return error;
-  await uploadPending();
+  if (uploadsPending()) await writeFiles(state.doc);
   if (uploadsPending()) return `Some attached files haven't been uploaded to ${placeName()} yet. They stay on this device and upload next time Pinpad is open.`;
   return null;
 }
@@ -487,6 +559,7 @@ export async function switchStorage(target: StorageTarget, keep: 'open' | 'repla
 async function refreshStorageName() {
   let name: string | null = null;
   if (backend === driveStorage) name = driveStorage.folderName() ?? 'Google Drive';
+  else if (backend === oneDriveStorage) name = 'OneDrive';
   else if (backend) name = (await nativeStorage()!.location()).folder.split(/[\\/]/).filter(Boolean).pop() ?? null;
   if (name !== state.storageName) setState({ storageName: name });
 }
@@ -517,11 +590,12 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   // Boards copied to the new place bring their attached files: get them here first.
   if (keep === 'replace') await cacheAll(state.doc);
   const native = nativeStorage();
-  const wasDrive = usingDrive();
+  const wasCloud = cloudInUse();
   const previous = target.kind === 'folder' && native ? await native.location() : null;
   if (target.kind === 'folder') await native?.use(target.folder);
-  if (target.kind === 'drive') driveStorage.reset();
-  setUsingDrive(target.kind === 'drive');
+  const cloud = target.kind === 'drive' || target.kind === 'onedrive' ? target.kind : null;
+  if (cloud) cloudStorage(cloud).reset();
+  setCloud(cloud);
   backend = currentBackend();
   fileBlocked = false;
   if (!backend) {
@@ -556,16 +630,15 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     setState({ storageError: null });
     await saveLocal(state.doc);
     await writeFiles(state.doc);
-    queueAll(state.doc);
     return;
   }
   let found: Awaited<ReturnType<typeof readFiles>>;
   try {
     found = await readFiles(backend);
-    if (!found) throw new Error(target.kind === 'drive' ? 'No Pinpad workspace in Google Drive' : 'No Pinpad workspace in that folder');
+    if (!found) throw new Error(cloud ? `No Pinpad workspace in ${placeName()}` : 'No Pinpad workspace in that folder');
   } catch (err) {
     if (previous && native) await native.use(previous.isDefault ? null : previous.folder);
-    setUsingDrive(wasDrive);
+    setCloud(wasCloud);
     backend = currentBackend();
     throw err;
   }
@@ -597,7 +670,7 @@ export async function initStore() {
   let storageError: string | null = null;
   backend = currentBackend();
   // Google Drive is a network away: open with this device's copy of it, and read Drive after.
-  const quick = backend === driveStorage && !!own?.boards?.[own.rootId];
+  const quick = (backend === driveStorage || backend === oneDriveStorage) && !!own?.boards?.[own.rootId];
   if (backend && !quick) {
     // The saved files win; IndexedDB is the fallback and, the first time files are used, the
     // boards that get written out.
@@ -681,7 +754,6 @@ export async function initStore() {
     return;
   }
   writeFiles(doc);
-  if (!fileBlocked) uploadPending();
 }
 
 function openError(err: unknown) {
@@ -716,7 +788,6 @@ async function finishStart(from: Backend) {
       }
     }
     await writeFiles(state.doc);
-    uploadPending();
   } catch (err) {
     if (from !== backend || starting !== shown) return;
     starting = null;

@@ -4,9 +4,11 @@ import { Check, ChevronDown, Folder, FolderCog, FolderPlus, LogOut, Monitor, Plu
 import { browse, useStore } from '../store';
 import { nativeStorage } from '../native';
 import { googleAllowedHere, googleConfigured } from '../googleAuth';
-import { addFolder, addGoogleDrive, describePlace, listPlaces, openPlace, removePlace, type NewPlaceChoice, type Place } from '../places';
+import { microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
+import { addFolder, addGoogleDrive, addOneDrive, describePlace, listPlaces, openPlace, removePlace, type NewPlaceChoice, type Place } from '../places';
 import { askChoice, askConfirm } from './ConfirmDialog';
 import { DriveIcon } from './DriveIcon';
+import { OneDriveIcon } from './OneDriveIcon';
 import { PinpadMark } from './PinpadMark';
 
 /** A place with no Pinpad boards yet: start empty there, or copy the open boards over. */
@@ -21,7 +23,7 @@ const chooseForNewPlace: NewPlaceChoice = async (where) => {
 };
 
 const PlaceIcon = ({ place }: { place: Place }) =>
-  place.kind === 'drive' ? <DriveIcon size={16} /> : place.kind === 'folder' ? <Folder size={16} /> : <Monitor size={16} />;
+  place.kind === 'drive' ? <DriveIcon size={16} /> : place.kind === 'onedrive' ? <OneDriveIcon size={17} /> : place.kind === 'folder' ? <Folder size={16} /> : <Monitor size={16} />;
 
 /**
  * The logo, which opens the list of places this device keeps boards in (each Google
@@ -32,6 +34,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<{ places: Place[]; current: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [waitingFor, setWaitingFor] = useState<'Google' | 'Microsoft' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const saved = useStore((s) => s.saved);
   const storageError = useStore((s) => s.storageError);
@@ -68,6 +71,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
       refresh();
     } finally {
       setBusy(false);
+      setWaitingFor(null);
     }
   };
 
@@ -77,16 +81,18 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
     // Leaving the open place first: this browser on the website, the default folder in the apps.
     const fallback = current ? list?.places.find((p) => p.kind === 'browser' || (p.kind === 'folder' && p.isDefault)) : undefined;
     const fallbackName = fallback ? describePlace(fallback, false).name : '';
+    const cloud = place.kind === 'drive' || place.kind === 'onedrive';
+    const service = place.kind === 'drive' ? 'Google' : 'Microsoft';
     const ok = await askConfirm({
-      title: place.kind === 'drive' ? `Disconnect ${detail}?` : `Remove “${name}” from the list?`,
+      title: cloud ? `Disconnect ${detail}?` : `Remove “${name}” from the list?`,
       message:
-        place.kind === 'drive'
-          ? `Pinpad signs out of this Google account on this device. Your boards stay in its Google Drive.${
+        cloud
+          ? `Pinpad signs out of this ${service} account on this device. Your boards stay in its ${place.kind === 'drive' ? 'Google Drive' : 'OneDrive'}.${
               current ? ` Pinpad switches to ${fallbackName}, copying your boards there if it's empty.` : ''
             }`
           : 'The folder and its files stay on your computer; it just leaves this list.',
-      confirm: place.kind === 'drive' ? 'Disconnect' : 'Remove',
-      danger: place.kind === 'drive',
+      confirm: cloud ? 'Disconnect' : 'Remove',
+      danger: cloud,
     });
     if (!ok) return refresh();
     await run(async () => {
@@ -140,8 +146,8 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
                   </span>
                   {current && <Check size={16} className="place-check" />}
                 </button>
-                {place.kind === 'drive' && (
-                  <button className="place-remove" disabled={busy} aria-label={`Disconnect ${detail}`} title="Disconnect this Google account" onClick={() => remove(place)}>
+                {(place.kind === 'drive' || place.kind === 'onedrive') && (
+                  <button className="place-remove" disabled={busy} aria-label={`Disconnect ${detail}`} title={`Disconnect this ${place.kind === 'drive' ? 'Google' : 'Microsoft'} account`} onClick={() => remove(place)}>
                     <LogOut size={14} /> <span>Disconnect</span>
                   </button>
                 )}
@@ -156,8 +162,13 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
           {error && <div className="place-menu-error" role="alert">{error}</div>}
           <div className="menu-sep" />
           {googleConfigured() && googleAllowedHere() && (
-            <button role="menuitem" disabled={busy} onClick={() => run(() => addGoogleDrive(chooseForNewPlace))}>
-              <Plus size={14} /> {busy ? 'Waiting for Google…' : 'Connect a Google Drive'}
+            <button role="menuitem" disabled={busy} onClick={() => (setWaitingFor('Google'), run(() => addGoogleDrive(chooseForNewPlace)))}>
+              <Plus size={14} /> {waitingFor === 'Google' ? 'Waiting for Google…' : 'Connect a Google Drive'}
+            </button>
+          )}
+          {microsoftConfigured() && microsoftAllowedHere() && (
+            <button role="menuitem" disabled={busy} onClick={() => (setWaitingFor('Microsoft'), run(() => addOneDrive(chooseForNewPlace)))}>
+              <Plus size={14} /> {waitingFor === 'Microsoft' ? 'Waiting for Microsoft…' : 'Connect a OneDrive'}
             </button>
           )}
           {nativeStorage() && (

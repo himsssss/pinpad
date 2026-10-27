@@ -9,7 +9,7 @@
 
 import { accessToken, dropToken } from './googleAuth';
 import type { StorageBatch } from './native';
-import { INDEX_FILE, type Listed } from './workspaceFiles';
+import { INDEX_FILE, isAttachmentPath, type Listed } from './workspaceFiles';
 import { load as loadLocal, save as saveLocal } from './persist';
 
 const API = 'https://www.googleapis.com/drive/v3/files';
@@ -129,7 +129,7 @@ async function load() {
     const dir = f.mimeType === FOLDER;
     // A board file renamed in Drive may have lost its .json ending; it's still JSON.
     // Files attached to cards aren't boards: they're looked up one at a time, never listed.
-    if (path === 'Attachments' || path.startsWith('Attachments/')) continue;
+    if (isAttachmentPath(path)) continue;
     if (dir || f.name.endsWith('.json') || f.mimeType === 'application/json') {
       listing.push({ path, modified: dir ? 0 : Date.parse(f.modifiedTime ?? '') || 0, dir });
     }
@@ -205,8 +205,12 @@ async function trash(path: string) {
   const id = ids.get(path);
   if (id) await drive(`${API}/${id}`, { method: 'PATCH', ...json({ trashed: true }) });
   ids.delete(path);
-  // Folders Pinpad made that now hold nothing of its own go to the trash as well.
-  for (let dir = dirname(path); dir; dir = dirname(dir)) {
+  await pruneFolders(dirname(path));
+}
+
+/** Folders Pinpad made that now hold nothing of its own go to the trash as well. */
+async function pruneFolders(from: string) {
+  for (let dir = from; dir; dir = dirname(dir)) {
     if ([...ids.keys()].some((key) => key.startsWith(`${dir}/`))) return;
     const folder = ids.get(dir);
     if (folder) await drive(`${API}/${folder}`, { method: 'PATCH', ...json({ trashed: true }) });
@@ -268,6 +272,27 @@ export const driveStorage = {
     if (!session) throw new Error("Google Drive didn't accept the upload");
     const done = await drive(session, { method: 'PUT', headers: { 'Content-Type': type }, body: blob });
     ids.set(path, (await done.json()).id);
+  },
+
+  /** Moves an attached file, renaming it and changing its folder; false when it isn't there. */
+  async moveFile(from: string, to: string) {
+    await ready();
+    const hit = lookup(from);
+    if (!hit) return false;
+    const oldParent = dirname(hit[0]) ? lookup(dirname(hit[0]))?.[1] : rootId;
+    const parent = await ensureFolder(dirname(to));
+    const reparent = oldParent && oldParent !== parent ? `&addParents=${parent}&removeParents=${oldParent}` : '';
+    await drive(`${API}/${hit[1]}?fields=id${reparent}`, { method: 'PATCH', ...json({ name: basename(to) }) });
+    ids.delete(hit[0]);
+    ids.set(to, hit[1]);
+    await pruneFolders(dirname(hit[0]));
+    return true;
+  },
+
+  async trashFile(path: string) {
+    await ready();
+    const hit = lookup(path);
+    if (hit) await trash(hit[0]);
   },
 
   /** An attached file, or null when it isn't in Drive. */

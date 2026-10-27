@@ -47,6 +47,10 @@ export interface NativeStorage {
   writeFile(file: { path: string; data: string }): Promise<boolean>;
   /** An attached file as base64, or null when it isn't there. */
   readFile(path: string): Promise<string | null>;
+  /** Moves an attached file (making folders as needed); false when there's nothing at `from`. */
+  moveFile(move: { from: string; to: string }): Promise<boolean>;
+  /** Sends an attached file to the system trash. */
+  trashFile(path: string): Promise<boolean>;
   /** Shows the system folder picker; null when cancelled. */
   choose(): Promise<string | null>;
   /** Switches to a folder (null for the default) without moving any files. */
@@ -77,6 +81,13 @@ export interface NativeGoogle {
   signOut(options?: { account?: string }): Promise<boolean>;
 }
 
+/** Microsoft sign-in through the system browser, like NativeGoogle (for OneDrive). */
+export interface NativeMicrosoft {
+  signIn(client: { clientId: string }): Promise<GoogleToken & { account?: string | null }>;
+  token(client: { clientId: string; account?: string }): Promise<GoogleToken | null>;
+  signOut(options?: { account?: string }): Promise<boolean>;
+}
+
 declare global {
   interface Window {
     pinpadNative?: {
@@ -84,6 +95,7 @@ declare global {
       embedBase?: string;
       storage?: NativeStorage;
       google?: NativeGoogle;
+      microsoft?: NativeMicrosoft;
     };
   }
 }
