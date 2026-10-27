@@ -1,8 +1,10 @@
-import type { El, ElType, ImageEl } from './types';
+import type { El, ElType, FileEl, ImageEl } from './types';
 import { getState, mutate, select, startEditing } from './store';
 import { DEFAULT_WIDTH, cloneElements, createElement, deleteElements, hostname, maxZ, normalizeUrl } from './doc';
 import { viewportCenter, worldRect } from './interactions';
 import { readImage } from './images';
+import { addAttachment } from './attachments';
+import { askConfirm } from './components/ConfirmDialog';
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -25,17 +27,20 @@ export function addElement(type: ElType, x: number, y: number, content?: string)
 }
 
 const ESTIMATED_HEIGHT: Record<ElType, number> = {
-  note: 80, todo: 120, link: 280, image: 200, board: 125, column: 160, comment: 90, line: 60, table: 130, drawing: 0,
+  note: 80, todo: 120, link: 280, image: 200, board: 125, column: 160, comment: 90, line: 60, table: 130, drawing: 0, file: 260,
 };
 
-/** Nearest spot to `(x, y)` where a new card of this type won't overlap the visible cards. */
-function freeSpot(type: ElType, x: number, y: number) {
+type Rect = { x: number; y: number; w: number; h: number };
+
+/** Nearest spot to `(x, y)` where a new card of this type won't overlap the visible cards (or `placed`). */
+function freeSpot(type: ElType, x: number, y: number, placed: Rect[] = []) {
   const w = type === 'line' ? 230 : DEFAULT_WIDTH[type];
   const h = ESTIMATED_HEIGHT[type];
   const gap = 20;
   const taken = [...document.querySelectorAll<HTMLElement>('.card.free')]
     .map((n) => worldRect(n.dataset.elId!))
-    .filter((r): r is NonNullable<typeof r> => !!r);
+    .filter((r): r is NonNullable<typeof r> => !!r)
+    .concat(placed);
   const fits = (cx: number, cy: number) =>
     taken.every((r) => cx + w + gap <= r.x || cx >= r.x + r.w + gap || cy + h + gap <= r.y || cy >= r.y + r.h + gap);
   for (let ring = 0; ring < 30; ring++) {
@@ -71,6 +76,59 @@ export function addImages(srcs: string[], at = viewportCenter()) {
     });
   });
   select(ids);
+}
+
+/**
+ * Adds dropped, pasted or picked files: images as image cards, anything else (PDFs, video,
+ * audio, documents…) as file cards with a preview.
+ */
+export async function addFiles(files: File[], at = viewportCenter()) {
+  const images = files.filter((f) => f.type.startsWith('image/') && f.type !== 'image/heic');
+  const others = files.filter((f) => !images.includes(f));
+  if (images.length) addImages(await Promise.all(images.map(readImage)), at);
+  if (!others.length) return;
+  const added: Awaited<ReturnType<typeof addAttachment>>[] = [];
+  const refused: string[] = [];
+  for (const file of others) {
+    try {
+      added.push(await addAttachment(file));
+    } catch (err) {
+      refused.push(err instanceof Error ? err.message : file.name);
+    }
+  }
+  if (added.length) {
+    const { ui } = getState();
+    let z = maxZ(getState().doc);
+    const ids: string[] = [];
+    // Side by side from where they were dropped, each in the nearest free space.
+    const placed: Rect[] = [];
+    const spots = added.map((_, i) => {
+      const p = freeSpot('file', at.x - DEFAULT_WIDTH.file / 2 + (images.length * 330) + i * 350, at.y - 120, placed);
+      placed.push({ ...p, w: DEFAULT_WIDTH.file, h: ESTIMATED_HEIGHT.file });
+      return p;
+    });
+    mutate((d) => {
+      added.forEach((file, i) => {
+        const { el } = createElement('file', ui.boardId, Math.round(spots[i].x), Math.round(spots[i].y), ++z);
+        Object.assign(el as FileEl, file);
+        d.elements[el.id] = el;
+        ids.push(el.id);
+      });
+    });
+    select(ids);
+  }
+  if (refused.length) {
+    askConfirm({ title: 'Some files weren\'t added', message: `${refused.join('. ')}. Files can be up to 200 MB.`, confirm: 'OK' });
+  }
+}
+
+/** Opens the file picker for any kind of file. */
+export function pickFiles() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.onchange = () => input.files?.length && addFiles([...input.files]);
+  input.click();
 }
 
 export function deleteSelection() {
@@ -136,6 +194,7 @@ const plainText = (el: El) => {
     case 'column': return el.title;
     case 'board': return getState().doc.boards[el.targetId]?.title ?? '';
     case 'table': return el.cells.map((row) => row.join('\t')).join('\n');
+    case 'file': return el.name;
     default: return '';
   }
 };
@@ -159,10 +218,10 @@ export async function paste(e: ClipboardEvent) {
     if (alive.length) cloneIntoBoard(alive, 32, 32);
     return;
   }
-  const files = [...data.files].filter((f) => f.type.startsWith('image/'));
+  const files = [...data.files];
   if (files.length) {
     e.preventDefault();
-    addImages(await Promise.all(files.map(readImage)));
+    await addFiles(files);
     return;
   }
   const trimmed = text.trim();

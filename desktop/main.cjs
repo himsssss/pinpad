@@ -134,6 +134,15 @@ function resolveInside(folder, relative) {
   return path.join(folder, ...parts);
 }
 
+/** A page-supplied path to an attached file: only inside the Attachments folder. */
+function resolveAttachment(folder, relative) {
+  const parts = String(relative).split('/');
+  if (parts.length !== 2 || parts[0] !== 'Attachments' || !parts[1] || parts[1].startsWith('.') || /[\\:]/.test(parts[1])) {
+    throw new Error(`Bad attachment path ${relative}`);
+  }
+  return path.join(folder, 'Attachments', parts[1]);
+}
+
 /** Removes folders left empty by a moved or deleted board, up to the storage folder. */
 async function pruneEmpty(folder, file) {
   for (let dir = path.dirname(file); dir.startsWith(folder + path.sep); dir = path.dirname(dir)) {
@@ -154,6 +163,8 @@ async function listFolder(folder) {
     for (const entry of entries) {
       if (out.length >= 5000) return;
       if (entry.name.startsWith('.') || /[\\:]/.test(entry.name)) continue;
+      // Files attached to cards, not boards; the page reads them one at a time.
+      if (!rel && entry.name === 'Attachments') continue;
       const relPath = rel ? `${rel}/${entry.name}` : entry.name;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -186,6 +197,18 @@ async function storage(event, op, arg) {
     }
     case 'list':
       return listFolder(folder);
+    case 'writeFile': {
+      // An attached file (PDF, video…), sent as base64, kept beside the boards.
+      const file = resolveAttachment(folder, arg.path);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(`${file}.tmp`, Buffer.from(String(arg.data), 'base64'));
+      await fs.rename(`${file}.tmp`, file);
+      return true;
+    }
+    case 'readFile': {
+      const file = resolveAttachment(folder, arg);
+      return (await exists(file)) ? (await fs.readFile(file)).toString('base64') : null;
+    }
     case 'write': {
       // Each file is written beside itself and swapped in, so a crash never leaves half a board.
       for (const [rel, text] of arg.write) {
@@ -376,6 +399,8 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       spellcheck: true,
+      // Chromium's PDF viewer, for previews of attached PDFs.
+      plugins: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
   });

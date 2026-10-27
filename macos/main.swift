@@ -182,6 +182,8 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
         read: (paths) => call('read', paths),
         write: (batch) => call('write', batch),
         list: () => call('list'),
+        writeFile: (file) => call('writeFile', file),
+        readFile: (path) => call('readFile', path),
         choose: () => call('choose'),
         use: (folder) => call('use', folder),
         reveal: () => call('reveal'),
@@ -219,6 +221,14 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
     return parts.reduce(folder) { $0.appendingPathComponent(String($1)) }
   }
 
+  /// A page-supplied path to an attached file: only inside the Attachments folder.
+  nonisolated private static func resolveAttachment(_ relative: String, in folder: URL) throws -> URL {
+    let parts = relative.split(separator: "/", omittingEmptySubsequences: false)
+    guard parts.count == 2, parts[0] == "Attachments", !parts[1].isEmpty, !parts[1].hasPrefix("."), !parts[1].contains(":")
+    else { throw StorageError(errorDescription: "Bad attachment path \(relative)") }
+    return folder.appendingPathComponent("Attachments").appendingPathComponent(String(parts[1]))
+  }
+
   /// Removes folders left empty by a moved or deleted board, up to the storage folder.
   nonisolated private static func pruneEmpty(above file: URL, in folder: URL) {
     let fm = FileManager.default
@@ -254,7 +264,11 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
       let dir = String(url.deletingLastPathComponent().path.dropFirst(root.count))
       let join = { (file: String) in dir.isEmpty ? file : "\(dir)/\(file)" }
       let modified = (values?.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000
-      if name.hasPrefix(".") {
+      if dir.isEmpty && name == "Attachments" {
+        // Files attached to cards, not boards; the page reads them one at a time.
+        if isDir { walker.skipDescendants() }
+        continue
+      } else if name.hasPrefix(".") {
         if isDir { walker.skipDescendants() }
         guard name.hasSuffix(".json.icloud") else { continue }
         let real = String(name.dropFirst().dropLast(".icloud".count))
@@ -320,6 +334,24 @@ final class StorageBridge: NSObject, WKScriptMessageHandlerWithReply {
     case "list":
       let folder = folder
       onIOQueue(replyHandler) { Self.list(folder) }
+    case "writeFile":
+      // An attached file (PDF, video…), sent as base64, kept beside the boards.
+      let file = raw as? [String: Any] ?? [:]
+      let (folder, path, data) = (folder, file["path"] as? String ?? "", file["data"] as? String ?? "")
+      onIOQueue(replyHandler) {
+        let url = try Self.resolveAttachment(path, in: folder)
+        guard let bytes = Data(base64Encoded: data) else { throw StorageError(errorDescription: "Bad file data") }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try bytes.write(to: url, options: .atomic)
+        return true
+      }
+    case "readFile":
+      let (folder, path) = (folder, arg ?? "")
+      onIOQueue(replyHandler) {
+        let url = try Self.resolveAttachment(path, in: folder)
+        guard let bytes = try? Data(contentsOf: url) else { return NSNull() }
+        return bytes.base64EncodedString()
+      }
     case "write":
       let batch = raw as? [String: Any] ?? [:]
       let folder = folder

@@ -43,6 +43,10 @@ export interface NativeStorage {
   write(batch: StorageBatch): Promise<boolean>;
   /** Every board file (.json) and folder in the storage folder, to notice changes made outside Pinpad. */
   list(): Promise<Listed[]>;
+  /** Saves an attached file (base64) at Attachments/<name>. */
+  writeFile(file: { path: string; data: string }): Promise<boolean>;
+  /** An attached file as base64, or null when it isn't there. */
+  readFile(path: string): Promise<string | null>;
   /** Shows the system folder picker; null when cancelled. */
   choose(): Promise<string | null>;
   /** Switches to a folder (null for the default) without moving any files. */

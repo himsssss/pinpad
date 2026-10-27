@@ -508,6 +508,26 @@ li.done .todo-check { background: var(--success); border-color: var(--success); 
 .image-empty { width: 100%; height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--stone); font-size: 13px; border: 1.5px dashed var(--hairline-strong); border-radius: var(--r-md); }
 .image-empty:hover { color: var(--ink); border-color: var(--stone); }
 
+/* file */
+.file { display: flex; flex-direction: column; }
+.file-preview { display: block; width: 100%; border-radius: var(--r-md) var(--r-md) 0 0; background: var(--board); }
+.file-pdf { height: 340px; border: 0; background: #fff; }
+/* The PDF scrolls and zooms once its card is selected; until then a press picks up the card. */
+.card:not(.selected) .file-pdf { pointer-events: none; }
+.file-video { max-height: 360px; background: #000; }
+.file-audio { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 12px 14px; color: var(--stone); }
+.file-audio audio { width: 100%; }
+.file-text { margin: 0; max-height: 220px; overflow: hidden; padding: 12px 14px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--slate); white-space: pre-wrap; word-break: break-word; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
+.file-other, .file-loading, .file-missing { height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--stone); }
+.file-missing { padding: 0 20px; text-align: center; font-size: 12px; line-height: 1.4; }
+.file-ext { font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+.file-meta { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 13px; color: var(--ink); }
+.file-meta-icon { flex: none; color: var(--stone); }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.file-size { flex: none; color: var(--stone); font-size: 12px; }
+.file-download { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; color: var(--slate); }
+.file-download:hover { background: var(--hover, rgba(0,0,0,.06)); color: var(--ink); }
+
 /* comment */
 .comment { padding: 12px 14px; font-size: 14px; line-height: 1.45; }
 .comment-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }

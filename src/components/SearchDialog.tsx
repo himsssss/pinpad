@@ -23,6 +23,7 @@ function textOf(el: El): string {
     case 'column': return el.title;
     case 'comment': return el.text;
     case 'table': return el.cells.flat().filter(Boolean).join(' · ');
+    case 'file': return el.name;
     default: return '';
   }
 }

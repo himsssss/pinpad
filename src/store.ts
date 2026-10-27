@@ -4,6 +4,7 @@ import type { Doc, UI, View } from './types';
 import { load, save } from './persist';
 import { blankDoc, deleteElements, seedDoc } from './doc';
 import { purgeOldTrash } from './projectActions';
+import { cacheAll, queueAll, uploadPending, uploadsPending } from './attachments';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
@@ -295,6 +296,8 @@ function writeFiles(doc: Doc) {
       await target.write(batch, (done) => setState({ saveProgress: done / total }));
       onDisk = next;
       setState({ saveProgress: null, ...(state.storageError ? { storageError: null } : {}) });
+      // Storage is reachable again: send any files still waiting.
+      if (uploadsPending()) uploadPending();
     } catch (err) {
       // onDisk stays as it was, so the next save retries everything that didn't go through.
       setState({
@@ -433,7 +436,7 @@ async function flush() {
 /** Whether some change hasn't reached storage yet (checked without waiting, for the website's leave warning). */
 function hasUnsavedNow() {
   const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR);
-  return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc);
+  return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc) || uploadsPending();
 }
 
 /**
@@ -447,6 +450,8 @@ export async function unsavedReason(): Promise<string | null> {
   }
   const error = state.storageError;
   if (error && !error.startsWith(SYNC_ERROR)) return error;
+  await uploadPending();
+  if (uploadsPending()) return `Some attached files haven't been uploaded to ${placeName()} yet. They stay on this device and upload next time Pinpad is open.`;
   return null;
 }
 
@@ -500,6 +505,8 @@ function showDoc(doc: Doc) {
 
 async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fresh') {
   await flushNow();
+  // Boards copied to the new place bring their attached files: get them here first.
+  if (keep === 'replace') await cacheAll(state.doc);
   const native = nativeStorage();
   const wasDrive = usingDrive();
   const previous = target.kind === 'folder' && native ? await native.location() : null;
@@ -539,6 +546,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     onDisk = nothingOnDisk();
     setState({ storageError: null });
     await writeFiles(state.doc);
+    queueAll(state.doc);
     return;
   }
   let found: Awaited<ReturnType<typeof readFiles>>;
@@ -656,4 +664,5 @@ export async function initStore() {
   refreshStorageName().catch(() => {});
   saveLocal(doc);
   writeFiles(doc);
+  if (!fileBlocked) uploadPending();
 }

@@ -14,6 +14,7 @@ export const DEFAULT_WIDTH: Record<ElType, number> = {
   line: 0,
   table: 390,
   drawing: 0,
+  file: 320,
 };
 
 export const PEN_COLORS = ['#050038', '#4262ff', '#f24726', '#fac710', '#8fd14f', '#12cdd4', '#9510ac', '#ffffff'];
@@ -70,6 +71,8 @@ export function createElement(
       return { el: { ...base, type, header: true, cells: [['', '', ''], ['', '', ''], ['', '', '']] } };
     case 'drawing':
       return { el: { ...base, type, vw: 1, vh: 1, strokes: [] } };
+    case 'file':
+      return { el: { ...base, type, name: '', mime: '', size: 0, ref: '' } };
     case 'line':
       return {
         el: { ...base, type, start: { x, y }, end: { x: x + 220, y: y + 40 }, bend: 0, arrow: 'end', color: LINE_COLORS[0] },

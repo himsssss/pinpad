@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('pinpadNative', {
   fetchPage: (url) => ipcRenderer.invoke('pinpad:fetch-page', String(url)),
   embedBase: ipcRenderer.sendSync('pinpad:embed-base'),
   storage: Object.fromEntries(
-    ['location', 'inspect', 'read', 'write', 'list', 'choose', 'use', 'reveal'].map((op) => [
+    ['location', 'inspect', 'read', 'write', 'list', 'writeFile', 'readFile', 'choose', 'use', 'reveal'].map((op) => [
       op,
       (arg) => ipcRenderer.invoke('pinpad:storage', op, arg ?? null),
     ]),

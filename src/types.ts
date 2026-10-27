@@ -1,4 +1,4 @@
-export type ElType = 'note' | 'todo' | 'link' | 'image' | 'board' | 'column' | 'comment' | 'line' | 'table' | 'drawing';
+export type ElType = 'note' | 'todo' | 'link' | 'image' | 'board' | 'column' | 'comment' | 'line' | 'table' | 'drawing' | 'file';
 
 export interface Endpoint {
   /** Attached element; when set, x/y are ignored. */
@@ -79,7 +79,17 @@ export interface DrawingEl extends BaseEl {
   strokes: Stroke[];
 }
 
-export type El = NoteEl | TodoEl | LinkEl | ImageEl | BoardEl | ColumnEl | CommentEl | LineEl | TableEl | DrawingEl;
+/** An attached file (PDF, video, document…); its contents are kept apart (see attachments.ts). */
+export interface FileEl extends BaseEl {
+  type: 'file';
+  name: string;
+  mime: string;
+  size: number;
+  /** The attachment's id, which names its file in the Attachments folder. */
+  ref: string;
+}
+
+export type El = NoteEl | TodoEl | LinkEl | ImageEl | BoardEl | ColumnEl | CommentEl | LineEl | TableEl | DrawingEl | FileEl;
 
 export interface Board {
   id: string;

@@ -102,6 +102,8 @@ function namer(): Take {
   take('', 'Pinpad Workspace', '.json');
   take('', 'Pinpad Trash', '.json');
   take('', 'Pinpad Templates', '.json');
+  // Attached files' folder (see attachments.ts); a sidebar folder can't take its name.
+  take('', 'Attachments');
   return take;
 }
 

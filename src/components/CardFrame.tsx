@@ -14,6 +14,7 @@ import { ColumnCard } from './cards/ColumnCard';
 import { CommentCard } from './cards/CommentCard';
 import { TableCard } from './cards/TableCard';
 import { DrawingCard } from './cards/DrawingCard';
+import { FileCard } from './cards/FileCard';
 
 export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) {
   const el = useStore((s) => s.doc.elements[id]);
@@ -73,7 +74,7 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       if (longPressed) return;
       // A board's title is renamed by clicking it once the card is selected, like a file name.
       if (el.type === 'board' && wasSelected && target.closest('.board-title')) return startEditing(id, { x: ev.clientX, y: ev.clientY });
-      if (el.type === 'board' || el.type === 'drawing') return;
+      if (el.type === 'board' || el.type === 'drawing' || el.type === 'file') return;
       if (el.type === 'column' && !target.closest('[data-column-head]')) return;
       startEditing(id, { x: ev.clientX, y: ev.clientY });
     });
@@ -131,6 +132,7 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       {el.type === 'comment' && <CommentCard el={el} editing={editing} />}
       {el.type === 'table' && <TableCard el={el} editing={editing} />}
       {el.type === 'drawing' && <DrawingCard el={el} />}
+      {el.type === 'file' && <FileCard el={el} />}
       {!editing && el.type !== 'board' && <ConnectHandle id={id} />}
       {resizable && (
         <>

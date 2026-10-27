@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   AlignLeft, ArrowLeft, ArrowUpRight, Bold, ChevronsDownUp, Columns2, Copy, ExternalLink, Heading,
-  Image, Italic, LayoutGrid, Link, List, ListChecks, ListOrdered, MessageSquare, MoveHorizontal,
+  Image, Italic, Paperclip, LayoutGrid, Link, List, ListChecks, ListOrdered, MessageSquare, MoveHorizontal,
   Pencil, Shapes, Spline, Strikethrough, Trash2, Table, Eraser, Rows3, Columns3, PanelTop,
   type LucideIcon,
 } from 'lucide-react';
@@ -9,7 +9,7 @@ import type { ElType, LineEl } from '../types';
 import { getState, mutate, openBoard, select, setUI, startEditing, useStore } from '../store';
 import { BOARD_COLORS, BOARD_ICONS, CARD_COLORS, LINE_COLORS, PEN_COLORS, PEN_SIZES } from '../doc';
 import { tableOps } from './cards/TableCard';
-import { addElementAtCenter, addImages, deleteSelection, duplicateSelection } from '../actions';
+import { addElementAtCenter, addImages, deleteSelection, duplicateSelection, pickFiles } from '../actions';
 import { pickImages } from '../images';
 import { BoardIcon } from './BoardIcon';
 import { TOOL_MIME } from './Canvas';
@@ -180,6 +180,7 @@ export function Toolbar() {
           ))}
           <div className="toolbar-divider" />
           <Tool label="Add image" icon={Image} onClick={async () => addImages(await pickImages())} />
+          <Tool label="Upload file" icon={Paperclip} onClick={pickFiles} />
           <Tool
             label="Draw"
             icon={Pencil}

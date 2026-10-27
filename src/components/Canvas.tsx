@@ -3,8 +3,7 @@ import { Minus, Plus, Maximize } from 'lucide-react';
 import type { ElType } from '../types';
 import { DEFAULT_VIEW, checkpoint, currentView, getState, select, setView, useStore } from '../store';
 import { registerCanvas, screenToWorld, trackPointer } from '../interactions';
-import { addElement, addImages } from '../actions';
-import { readImage } from '../images';
+import { addElement, addFiles } from '../actions';
 import { addStroke, eraseAt, strokePath } from '../drawing';
 import { CardFrame } from './CardFrame';
 import { TemplateChips } from './TemplateChips';
@@ -234,9 +233,9 @@ export function Canvas() {
       addElement(tool, p.x - 20, p.y - 20);
       return;
     }
-    const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+    const files = [...e.dataTransfer.files];
     if (files.length) {
-      addImages(await Promise.all(files.map(readImage)), p);
+      await addFiles(files, p);
       return;
     }
     const text = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');

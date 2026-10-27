@@ -108,6 +108,8 @@ async function load() {
     ids.set(path, f.id);
     const dir = f.mimeType === FOLDER;
     // A board file renamed in Drive may have lost its .json ending; it's still JSON.
+    // Files attached to cards aren't boards: they're looked up one at a time, never listed.
+    if (path === 'Attachments' || path.startsWith('Attachments/')) continue;
     if (dir || f.name.endsWith('.json') || f.mimeType === 'application/json') {
       listing.push({ path, modified: dir ? 0 : Date.parse(f.modifiedTime ?? '') || 0, dir });
     }
@@ -220,6 +222,33 @@ export const driveStorage = {
       onProgress?.(++done);
     }
     return true;
+  },
+
+  /**
+   * Saves an attached file (PDF, video…) at Attachments/<name>, with a resumable upload so
+   * large files go through.
+   */
+  async writeAttachment(path: string, blob: Blob) {
+    await ready();
+    if (lookup(path)) return;
+    const parent = await ensureFolder(dirname(path));
+    const type = blob.type || 'application/octet-stream';
+    const start = await drive(`${UPLOAD}?uploadType=resumable&fields=id`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': type },
+      body: JSON.stringify({ name: basename(path), parents: [parent], mimeType: type }),
+    });
+    const session = start.headers.get('Location');
+    if (!session) throw new Error("Google Drive didn't accept the upload");
+    const done = await drive(session, { method: 'PUT', headers: { 'Content-Type': type }, body: blob });
+    ids.set(path, (await done.json()).id);
+  },
+
+  /** An attached file, or null when it isn't in Drive. */
+  async readAttachment(path: string): Promise<Blob | null> {
+    await ready();
+    const hit = lookup(path);
+    return hit ? (await drive(`${API}/${hit[1]}?alt=media`)).blob() : null;
   },
 
   /** Lists Drive afresh, so files renamed, moved or deleted there since are seen. */
