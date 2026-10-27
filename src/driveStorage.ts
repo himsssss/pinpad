@@ -10,6 +10,7 @@
 import { accessToken, dropToken } from './googleAuth';
 import type { StorageBatch } from './native';
 import { INDEX_FILE, type Listed } from './workspaceFiles';
+import { load as loadLocal, save as saveLocal } from './persist';
 
 const API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -62,18 +63,34 @@ async function listAll(query: string) {
   return files;
 }
 
+/**
+ * This device's copy of each board file, by Drive file id, with the change time it had. A
+ * file Drive lists with the same time is read from here instead of downloaded again, so
+ * opening Pinpad only downloads the boards that changed elsewhere.
+ */
+const cacheKey = (id: string) => `drive-file:${id}`;
+type Cached = { modified: string; text: string };
+
+function remember(id: string, modified: string | undefined, text: string) {
+  if (!modified) return;
+  changed.set(id, modified);
+  saveLocal(cacheKey(id), { modified, text } satisfies Cached).catch(() => {});
+}
+
 async function create(meta: Record<string, unknown>, text?: string): Promise<string> {
   if (text === undefined) return (await (await drive(`${API}?fields=id`, { method: 'POST', ...json(meta) })).json()).id;
   const boundary = `pinpad-${crypto.randomUUID()}`;
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n` +
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${text}\r\n--${boundary}--`;
-  const res = await drive(`${UPLOAD}?uploadType=multipart&fields=id`, {
+  const res = await drive(`${UPLOAD}?uploadType=multipart&fields=id,modifiedTime`, {
     method: 'POST',
     headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
     body,
   });
-  return (await res.json()).id;
+  const file: DriveFile = await res.json();
+  remember(file.id, file.modifiedTime, text);
+  return file.id;
 }
 
 let rootId: string | null = null;
@@ -83,6 +100,8 @@ let rootName: string | null = null;
 let ids = new Map<string, string>();
 /** The files and folders found by the last listing. */
 let listing: Listed[] = [];
+/** Drive file id to its last change time, as listed (or as returned by a save). */
+let changed = new Map<string, string>();
 let loading: Promise<void> | null = null;
 
 /** Finds (or creates) the Pinpad folder and maps every file in it by path. */
@@ -102,6 +121,7 @@ async function load() {
   };
   ids = new Map();
   listing = [];
+  changed = new Map(files.filter((f) => f.modifiedTime).map((f) => [f.id, f.modifiedTime!]));
   for (const f of files) {
     const path = f.id === rootId ? null : pathOf(f);
     if (path === null || ids.has(path)) continue;
@@ -173,11 +193,12 @@ async function writeFile(path: string, text: string) {
     await drive(`${API}/${hit[1]}`, { method: 'PATCH', ...json({ name: basename(path) }) });
     remap(hit[0], path);
   }
-  await drive(`${UPLOAD}/${hit[1]}?uploadType=media`, {
+  const res = await drive(`${UPLOAD}/${hit[1]}?uploadType=media&fields=modifiedTime`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json; charset=UTF-8' },
     body: text,
   });
+  remember(hit[1], ((await res.json()) as DriveFile).modifiedTime, text);
 }
 
 async function trash(path: string) {
@@ -202,7 +223,12 @@ export const driveStorage = {
       await Promise.all(
         paths.slice(i, i + 8).map(async (path) => {
           const id = ids.get(path);
-          out[path] = id ? await (await drive(`${API}/${id}?alt=media`)).text() : null;
+          if (!id) return void (out[path] = null);
+          const modified = changed.get(id);
+          const cached = modified ? await loadLocal<Cached>(cacheKey(id)).catch(() => undefined) : undefined;
+          if (cached && cached.modified === modified) return void (out[path] = cached.text);
+          out[path] = await (await drive(`${API}/${id}?alt=media`)).text();
+          remember(id, modified, out[path]!);
         }),
       );
     }

@@ -8,6 +8,7 @@ import { Canvas } from './components/Canvas';
 import { SearchDialog } from './components/SearchDialog';
 import { ProjectsPage } from './components/ProjectsPage';
 import { TRASH, TrashPage } from './components/TrashPage';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
@@ -154,6 +155,7 @@ export function App() {
       <CardMenu />
       <ContextMenu />
       <ConfirmDialog />
+      <UpdatePrompt />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>
   );

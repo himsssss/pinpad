@@ -246,6 +246,13 @@ let writing: Promise<unknown> = Promise.resolve();
 let writesPending = 0;
 /** The boards as loaded when saving to files was stopped; anything changed since isn't saved there. */
 let blockedDoc: Doc | null = null;
+/**
+ * On the website with Google Drive, the copy on this device is shown at once while Drive is
+ * read (finishStart). Until then this holds that copy and nothing is saved to Drive, since
+ * Drive may have newer boards from another computer.
+ */
+let starting: Doc | null = null;
+let startup: Promise<void> = Promise.resolve();
 /** The files as of the last successful save, so each save writes only what changed. */
 let onDisk: Layout = { files: new Map(), paths: new Map() };
 const nothingOnDisk = (): Layout => ({ files: new Map(), paths: new Map() });
@@ -284,7 +291,7 @@ function changesTo(next: Layout): StorageBatch {
 
 function writeFiles(doc: Doc) {
   const target = backend;
-  if (!target || fileBlocked) return writing;
+  if (!target || fileBlocked || starting) return writing;
   writesPending++;
   writing = writing.then(async () => {
     const next = layoutWorkspace(doc);
@@ -366,7 +373,7 @@ const clearSyncError = () => state.storageError?.startsWith(SYNC_ERROR) && setSt
  */
 async function syncFromStorage() {
   const from = backend;
-  if (!state || !from || fileBlocked || syncing || Date.now() - lastSync < 3000) return;
+  if (!state || !from || fileBlocked || starting || syncing || Date.now() - lastSync < 3000) return;
   syncing = true;
   lastSync = Date.now();
   try {
@@ -436,7 +443,7 @@ async function flush() {
 /** Whether some change hasn't reached storage yet (checked without waiting, for the website's leave warning). */
 function hasUnsavedNow() {
   const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR);
-  return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc) || uploadsPending();
+  return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc) || (!!starting && state.doc !== starting) || uploadsPending();
 }
 
 /**
@@ -444,6 +451,7 @@ function hasUnsavedNow() {
  * everything is saved. The desktop apps ask this before closing the window or quitting.
  */
 export async function unsavedReason(): Promise<string | null> {
+  await startup;
   await flushNow();
   if (fileBlocked && state.doc !== blockedDoc) {
     return `Your latest changes are only on this device: Pinpad couldn't open your boards in ${placeName()}, so it isn't saving there.`;
@@ -505,6 +513,7 @@ function showDoc(doc: Doc) {
 
 async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fresh') {
   await flushNow();
+  starting = null;
   // Boards copied to the new place bring their attached files: get them here first.
   if (keep === 'replace') await cacheAll(state.doc);
   const native = nativeStorage();
@@ -545,6 +554,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     if (replaced.length) await backend.write({ write: [], remove: [], trash: replaced });
     onDisk = nothingOnDisk();
     setState({ storageError: null });
+    await saveLocal(state.doc);
     await writeFiles(state.doc);
     queueAll(state.doc);
     return;
@@ -582,10 +592,13 @@ function schedulePersist() {
 
 export async function initStore() {
   // This place's own copy; before copies were kept per account, there was one shared copy.
-  let doc = (await load<Doc>(docKey()).catch(() => undefined)) ?? (await load<Doc>('doc').catch(() => undefined));
+  const own = await load<Doc>(docKey()).catch(() => undefined);
+  let doc = own ?? (await load<Doc>('doc').catch(() => undefined));
   let storageError: string | null = null;
   backend = currentBackend();
-  if (backend) {
+  // Google Drive is a network away: open with this device's copy of it, and read Drive after.
+  const quick = backend === driveStorage && !!own?.boards?.[own.rootId];
+  if (backend && !quick) {
     // The saved files win; IndexedDB is the fallback and, the first time files are used, the
     // boards that get written out.
     try {
@@ -596,8 +609,7 @@ export async function initStore() {
       }
     } catch (err) {
       fileBlocked = true;
-      const reason = err instanceof SignInNeeded ? 'you need to sign in again' : errorText(err);
-      storageError = `Couldn't open your boards in ${placeName()} (${reason}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until you open Storage location and fix this.`;
+      storageError = openError(err);
     }
   }
   const savedUI = loadUI();
@@ -663,6 +675,53 @@ export async function initStore() {
   if (fileBlocked) blockedDoc = doc;
   refreshStorageName().catch(() => {});
   saveLocal(doc);
+  if (quick && backend) {
+    starting = doc;
+    startup = finishStart(backend);
+    return;
+  }
   writeFiles(doc);
   if (!fileBlocked) uploadPending();
+}
+
+function openError(err: unknown) {
+  const reason = err instanceof SignInNeeded ? 'you need to sign in again' : errorText(err);
+  return `Couldn't open your boards in ${placeName()} (${reason}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until you open Storage location and fix this.`;
+}
+
+/**
+ * Reads Google Drive after opening with this device's copy. Usually nothing changed there
+ * and the copy stays as it is; boards changed on another computer replace it, and anything
+ * edited in the moment before is one undo away (and saved back if undone).
+ */
+async function finishStart(from: Backend) {
+  const shown = starting!;
+  try {
+    const found = await readFiles(from);
+    if (from !== backend || starting !== shown) return;
+    starting = null;
+    if (!found) {
+      // No workspace there (it was deleted): save it again from this copy.
+      onDisk = nothingOnDisk();
+    } else {
+      onDisk = found.disk;
+      if (!sameFiles(found.disk, layoutWorkspace(shown))) {
+        const { doc } = found;
+        if (state.doc !== shown) record(state.doc);
+        pendingBase = null;
+        const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
+        const selection = state.ui.selection.filter((id) => doc.elements[id]);
+        setState({ doc, ui: { ...state.ui, boardId, selection, editingId: null, dropTarget: null } });
+        await saveLocal(doc);
+      }
+    }
+    await writeFiles(state.doc);
+    uploadPending();
+  } catch (err) {
+    if (from !== backend || starting !== shown) return;
+    starting = null;
+    fileBlocked = true;
+    blockedDoc = shown;
+    setState({ storageError: openError(err) });
+  }
 }

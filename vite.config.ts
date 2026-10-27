@@ -1,3 +1,6 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -32,9 +35,44 @@ function linkPreviewDevServer(): Plugin {
   };
 }
 
+/**
+ * Writes this build's id and file list into the service worker (public/sw.js), so each
+ * version's files are cached together and a new build is noticed as an update.
+ */
+function serviceWorkerFiles(): Plugin {
+  let outDir = 'dist';
+  let files: string[] = [];
+  return {
+    name: 'pinpad-sw-files',
+    apply: 'build',
+    configResolved(config) {
+      outDir = config.build.outDir;
+    },
+    generateBundle(_, bundle) {
+      files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'index.html').sort();
+    },
+    closeBundle() {
+      const path = join(outDir, 'sw.js');
+      const build = createHash('sha256').update(files.join('\n')).digest('hex').slice(0, 12);
+      const source = readFileSync(path, 'utf8')
+        .replace("const BUILD = 'dev';", `const BUILD = '${build}';`)
+        .replace('const ASSETS = [];', `const ASSETS = ${JSON.stringify(files)};`);
+      writeFileSync(path, source);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), linkPreviewDevServer()],
+  plugins: [react(), linkPreviewDevServer(), serviceWorkerFiles()],
   // Relative asset paths so the build also loads inside the macOS app bundle.
   base: './',
   server: { port: 3000, strictPort: true },
+  build: {
+    rollupOptions: {
+      output: {
+        // React rarely changes, so it's its own file: an update to Pinpad doesn't download it again.
+        manualChunks: (id) => (/node_modules\/(react|react-dom|scheduler)\//.test(id) ? 'react' : undefined),
+      },
+    },
+  },
 });
