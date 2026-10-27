@@ -3,13 +3,12 @@ import {
   AlignLeft, ArrowLeft, ArrowUpRight, Bold, ChevronsDownUp, Columns2, Copy, ExternalLink, Heading,
   Image, Italic, LayoutGrid, Link, List, ListChecks, ListOrdered, MessageSquare, MoveHorizontal,
   Pencil, Shapes, Spline, Strikethrough, Trash2, Table, Eraser, Rows3, Columns3, PanelTop,
-  PanelLeftClose, PanelLeftOpen, type LucideIcon,
+  type LucideIcon,
 } from 'lucide-react';
 import type { ElType, LineEl } from '../types';
 import { getState, mutate, openBoard, select, setUI, startEditing, useStore } from '../store';
 import { BOARD_COLORS, BOARD_ICONS, CARD_COLORS, LINE_COLORS, PEN_COLORS, PEN_SIZES } from '../doc';
 import { tableOps } from './cards/TableCard';
-import { MOD } from '../shortcuts';
 import { addElementAtCenter, addImages, deleteSelection, duplicateSelection } from '../actions';
 import { pickImages } from '../images';
 import { BoardIcon } from './BoardIcon';
@@ -74,7 +73,6 @@ export function Toolbar() {
   const boards = useStore((s) => s.doc.boards);
   const dropTarget = useStore((s) => s.ui.dropTarget);
   const draw = useStore((s) => s.ui.draw);
-  const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
   const [popover, setPopover] = useState<{ kind: 'color' | 'icon'; top: number } | null>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
@@ -117,23 +115,6 @@ export function Toolbar() {
     const top = e.currentTarget.offsetTop;
     setPopover((p) => (p?.kind === kind ? null : { kind, top }));
   };
-
-  // Folders toggle sits alone at the top of the rail, separated from the tools.
-  const foldersToggle = (
-    <div className="toolbar-top">
-      <button
-        className={`tool folders-toggle ${sidebarOpen ? 'active' : ''}`}
-        onClick={() => setUI({ sidebarOpen: !sidebarOpen })}
-        aria-pressed={sidebarOpen}
-        title={`${sidebarOpen ? 'Minimize' : 'Show'} folders (${MOD}\\)`}
-      >
-        <span className="tool-icon plain">
-          {sidebarOpen ? <PanelLeftClose size={17} strokeWidth={1.7} /> : <PanelLeftOpen size={17} strokeWidth={1.7} />}
-        </span>
-        <span className="tool-label">Folders</span>
-      </button>
-    </div>
-  );
 
   const trash = (
     <div className="toolbar-bottom">
@@ -193,7 +174,6 @@ export function Toolbar() {
   if (!selected.length) {
     return (
       <aside className="toolbar">
-        {foldersToggle}
         <div className="toolbar-tools">
           {CREATE_TOOLS.map((t) => (
             <Tool key={t.type} label={t.label} icon={t.icon} accent={t.accent} draggableType={t.type} onClick={() => addElementAtCenter(t.type)} />
@@ -213,7 +193,6 @@ export function Toolbar() {
 
   return (
     <aside className="toolbar contextual">
-      {foldersToggle}
       <div className="toolbar-tools">
         <button className="tool back" onClick={() => select([])} aria-label="Back to tools">
           <ArrowLeft size={15} />
