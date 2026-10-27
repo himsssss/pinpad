@@ -61,6 +61,7 @@ function Thumbnail({ doc, board }: { doc: Doc; board: Board }) {
  */
 export function ProjectsPage({ folderId }: { folderId: string | null }) {
   const doc = useStore((s) => s.doc);
+  const rootName = useStore((s) => s.storageName) ?? 'Projects';
   const [dropOn, setDropOn] = useState<string | null>(null);
   const folder = folderId ? doc.folders[folderId] : undefined;
 
@@ -107,7 +108,7 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
       <div className="projects-head">
         <nav className="projects-trail" aria-label="Folder path">
           <button onClick={() => browse(null)} {...(folder ? dropTarget('') : {})} className={dropOn === '' ? 'drop-over' : ''}>
-            Projects
+            {rootName}
           </button>
           {trail.map((f, i) => (
             <span key={f.id} className="projects-crumb">

@@ -799,3 +799,6 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .menu .menu-icons button { width: auto; flex: 1; justify-content: center; padding: 7px 6px; gap: 6px; font-size: 13px; }
 .menu button:disabled { opacity: 0.45; cursor: default; background: none; }
 .home-tile-icon { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border-radius: 5px; background: var(--brand-yellow); color: var(--ink); }
+.sidebar-heading .section-label { gap: 5px; max-width: 150px; }
+.sidebar-heading .section-label svg { flex-shrink: 0; }
+.section-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

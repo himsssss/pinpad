@@ -16,6 +16,8 @@ export interface State {
   saved: boolean;
   /** Why the workspace file in the storage folder couldn't be read or written (desktop apps). */
   storageError: string | null;
+  /** Name of the folder the boards are saved in (in Google Drive or on this computer); null in browser storage. */
+  storageName: string | null;
 }
 
 let state: State;
@@ -319,6 +321,7 @@ async function syncFromStorage() {
     const busy = () => from !== backend || state.doc !== before || !state.saved || persistTimer !== undefined || !!state.ui.editingId;
     if (busy()) return;
     const listing = await from.list();
+    refreshStorageName().catch(() => {});
     if (unchanged(listing)) return void clearSyncError();
     const found = await readFiles(from, listing);
     clearSyncError();
@@ -389,6 +392,22 @@ export async function flushNow() {
  * place is left alone either way.
  */
 export async function switchStorage(target: StorageTarget, keep: 'open' | 'replace') {
+  try {
+    await moveStorage(target, keep);
+  } finally {
+    refreshStorageName().catch(() => {});
+  }
+}
+
+/** Shows the name of the folder the boards are in now; it follows a rename done in Drive or Finder. */
+async function refreshStorageName() {
+  let name: string | null = null;
+  if (backend === driveStorage) name = driveStorage.folderName() ?? 'Google Drive';
+  else if (backend) name = (await nativeStorage()!.location()).folder.split(/[\\/]/).filter(Boolean).pop() ?? null;
+  if (name !== state.storageName) setState({ storageName: name });
+}
+
+async function moveStorage(target: StorageTarget, keep: 'open' | 'replace') {
   await flushNow();
   const native = nativeStorage();
   const wasDrive = usingDrive();
@@ -516,7 +535,9 @@ export async function initStore() {
     canRedo: false,
     saved: true,
     storageError,
+    storageName: null,
   };
+  refreshStorageName().catch(() => {});
   saveLocal(doc);
   writeFiles(doc);
 }

@@ -77,6 +77,8 @@ async function create(meta: Record<string, unknown>, text?: string): Promise<str
 }
 
 let rootId: string | null = null;
+/** The Pinpad folder's name in Drive ("Pinpad" unless renamed there). */
+let rootName: string | null = null;
 /** Relative path (of files and folders, / separated) to Drive file id. */
 let ids = new Map<string, string>();
 /** The files and folders found by the last listing. */
@@ -85,7 +87,9 @@ let loading: Promise<void> | null = null;
 
 /** Finds (or creates) the Pinpad folder and maps every file in it by path. */
 async function load() {
-  rootId = (await listAll(ROOT_QUERY))[0]?.id ?? (await create({ name: 'Pinpad', mimeType: FOLDER, appProperties: { pinpad: 'root' } }));
+  const root = (await listAll(ROOT_QUERY))[0];
+  rootId = root?.id ?? (await create({ name: 'Pinpad', mimeType: FOLDER, appProperties: { pinpad: 'root' } }));
+  rootName = root?.name ?? 'Pinpad';
   const files = await listAll('trashed=false');
   const byId = new Map(files.map((f) => [f.id, f]));
   const pathOf = (f: DriveFile, depth = 0): string | null => {
@@ -227,9 +231,15 @@ export const driveStorage = {
     return rootId ? `https://drive.google.com/drive/folders/${rootId}` : null;
   },
 
+  /** The Pinpad folder's current name in Drive, once it's been found. */
+  folderName() {
+    return rootName;
+  },
+
   /** Forgets what's cached, so the next call lists Drive again (after switching accounts). */
   reset() {
     rootId = null;
+    rootName = null;
     ids = new Map();
     loading = null;
   },

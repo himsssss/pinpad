@@ -19,13 +19,13 @@ export function App() {
   const [shortcuts, setShortcuts] = useState(false);
   const browsing = useStore((s) => s.ui.browsing);
   const boardTitle = useStore((s) =>
-    s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
+    s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? s.storageName ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
   );
   const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
 
   // The macOS app shows this as its window title.
   useEffect(() => {
-    document.title = boardTitle ? `${boardTitle} – Pinpad` : 'Pinpad';
+    document.title = boardTitle && boardTitle !== 'Pinpad' ? `${boardTitle} – Pinpad` : 'Pinpad';
   }, [boardTitle]);
 
   // Something shared to the installed app from another app (a link or text) becomes a card.

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
-import { browse, getState, mutate, openBoard, setUI, useStore } from '../store';
+import { browse, getState, mutate, openBoard, setUI, usingDrive, useStore } from '../store';
+import { DriveIcon } from './DriveIcon';
 import { boardPath, createElement, maxZ, projects, uid } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD } from '../shortcuts';
@@ -42,6 +43,8 @@ export function Sidebar() {
   const [htmlDrop, setHtmlDrop] = useState<string | null>(null);
   const collapsedSections = useStore((s) => s.ui.collapsedSections);
   const browsing = useStore((s) => s.ui.browsing);
+  // The list is named after where it's saved: the Drive folder or the folder on this computer.
+  const storageName = useStore((s) => s.storageName);
 
   if (!open) return null;
 
@@ -63,8 +66,9 @@ export function Sidebar() {
       >
         {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </button>
-      <button className={`section-label ${browsing === '' ? 'current' : ''}`} onClick={() => browse(null)} title={`Show all ${label.toLowerCase()}`}>
-        {label}
+      <button className={`section-label ${browsing === '' ? 'current' : ''}`} onClick={() => browse(null)} title={`Show everything in ${label}`}>
+        {storageName && (usingDrive() ? <DriveIcon size={12} /> : <Folder size={12} />)}
+        <span className="section-name">{label}</span>
       </button>
       {isCollapsed(section) && count > 0 && <span className="section-count">{count}</span>}
     </span>
@@ -251,7 +255,7 @@ export function Sidebar() {
         {...dropZone('', { boards: true, folders: true })}
       >
         <div className="sidebar-heading">
-          {sectionToggle('folders', 'Projects', topFolders.length + unfiled.length)}
+          {sectionToggle('folders', storageName ?? 'Projects', topFolders.length + unfiled.length)}
           <button aria-label="New project" title="New project" onClick={() => newProject()}>
             <Plus size={14} />
           </button>
