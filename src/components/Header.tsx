@@ -53,7 +53,6 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
   const boards = useStore((s) => s.doc.boards);
   const rootId = useStore((s) => s.doc.rootId);
   const browsing = useStore((s) => s.ui.browsing);
-  const rootName = useStore((s) => s.storageName) ?? 'Projects';
   const folders = useStore((s) => s.doc.folders);
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
@@ -115,29 +114,20 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
           <PinpadMark size={28} />
           <span className="wordmark">Pinpad</span>
         </button>
-        <span className="topbar-sep" />
+        {/* On the Projects page the logo is the top level, so the path starts at the folder. */}
+        {(browsing === null || browsing === TRASH || folderTrail.length > 0) && <span className="topbar-sep" />}
         {browsing !== null ? (
           <nav className="breadcrumbs" aria-label="Folder path">
-            {folderTrail.length > 0 && (
-              <span className="crumb">
-                <button onClick={() => browse(null)}>{rootName}</button>
-                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
-              </span>
-            )}
             {folderTrail.slice(0, -1).map((f) => (
               <span key={f.id} className="crumb">
                 <button onClick={() => browse(f.id)}>{f.name}</button>
                 <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
               </span>
             ))}
-            {browsing === TRASH && (
-              <span className="crumb">
-                <button onClick={() => browse(null)}>{rootName}</button>
-                <ChevronRight size={14} className="crumb-sep" aria-hidden="true" />
-              </span>
-            )}
             {folderTrail.length > 0 && <Folder size={18} className="crumb-folder" aria-hidden="true" />}
-            <span className="board-heading static">{browsing === TRASH ? 'Trash' : folderTrail.at(-1)?.name ?? rootName}</span>
+            {(browsing === TRASH || folderTrail.length > 0) && (
+              <span className="board-heading static">{browsing === TRASH ? 'Trash' : folderTrail.at(-1)!.name}</span>
+            )}
           </nav>
         ) : (
           <nav className="breadcrumbs" aria-label="Board path">

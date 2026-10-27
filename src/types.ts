@@ -89,6 +89,8 @@ export interface Board {
   icon: string;
   /** Sidebar folder this board is filed in; filing doesn't move it on any canvas. */
   folderId?: string;
+  /** When the board or a card on it last changed (ms since 1970); absent on older boards. */
+  updatedAt?: number;
 }
 
 export interface Folder {
@@ -174,6 +176,9 @@ export interface UI {
   guides: Guides | null;
   /** Folder or project whose name is being edited, and where: the sidebar or the Projects page. */
   renaming: Renaming | null;
+  /** How the Projects page lists things, like Google Drive: tiles or a list, and the order. */
+  projectsView: 'grid' | 'list';
+  projectsSort: { by: 'name' | 'edited'; desc: boolean };
   /** The Projects page, shown instead of a board: the folder it's showing ('' for the top level). */
   browsing: string | null;
 }

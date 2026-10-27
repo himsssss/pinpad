@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ChevronRight, Folder, FolderPlus, Home, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronRight, Folder, FolderPlus, LayoutGrid, List, Plus } from 'lucide-react';
 import type { Board, Doc, El } from '../types';
-import { browse, openBoard, useStore } from '../store';
+import { browse, openBoard, setUI, useStore } from '../store';
 import { countCards, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { BOARD_MIME, FOLDER_MIME, createFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject } from '../projectActions';
@@ -57,6 +57,16 @@ function Thumbnail({ doc, board }: { doc: Doc; board: Board }) {
   );
 }
 
+/** "Last edited" the way Google Drive writes it: a time today, then dates. */
+function edited(t: number | undefined) {
+  if (!t) return '—';
+  const d = new Date(t);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === new Date(now.getTime() - 86_400_000).toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+}
+
 /**
  * All projects laid out like a Google Drive folder: sidebar folders as folder tiles, then
  * the projects in this folder as cards. Opened from the Projects heading in the sidebar.
@@ -65,19 +75,44 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
   const doc = useStore((s) => s.doc);
   const rootName = useStore((s) => s.storageName) ?? 'Projects';
   const renaming = useStore((s) => (s.ui.renaming?.where === 'page' ? s.ui.renaming.id : null));
+  const view = useStore((s) => s.ui.projectsView);
+  const sort = useStore((s) => s.ui.projectsSort);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const folder = folderId ? doc.folders[folderId] : undefined;
 
-  const subfolders = Object.values(doc.folders)
-    .filter((f) => (f.parentId && doc.folders[f.parentId] ? f.parentId : null) === (folder ? folder.id : null))
-    .sort((a, b) => a.order - b.order);
-  const filed = (b: Board) => (b.folderId && doc.folders[b.folderId] ? b.folderId : null);
-  const items = projects(doc)
-    .filter((b) => filed(b) === (folder ? folder.id : null))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  const allProjects = projects(doc);
   const countIn = (id: string): number =>
-    projects(doc).filter((b) => b.folderId === id).length +
+    allProjects.filter((b) => b.folderId === id).length +
     Object.values(doc.folders).filter((f) => f.parentId === id).reduce((n, f) => n + countIn(f.id), 0);
+
+  /** A board's last edit, counting every board inside it. */
+  const boardEdited = (id: string): number =>
+    Math.max(doc.boards[id]?.updatedAt ?? 0, ...Object.values(doc.boards).filter((b) => b.parentId === id).map((b) => boardEdited(b.id)));
+  /** A folder's last edit: its most recently edited project, in it or its subfolders. */
+  const folderEdited = (id: string): number =>
+    Math.max(0, ...allProjects.filter((b) => b.folderId === id).map((b) => boardEdited(b.id)),
+      ...Object.values(doc.folders).filter((f) => f.parentId === id).map((f) => folderEdited(f.id)));
+
+  // Like Drive: folders first, each group in the chosen order.
+  const order = <T,>(list: T[], name: (x: T) => string, time: (x: T) => number) =>
+    [...list].sort((a, b) => {
+      const c = sort.by === 'name' ? name(a).localeCompare(name(b), undefined, { numeric: true }) : time(a) - time(b);
+      return sort.desc ? -c : c;
+    });
+  const subfolders = order(
+    Object.values(doc.folders).filter((f) => (f.parentId && doc.folders[f.parentId] ? f.parentId : null) === (folder ? folder.id : null)),
+    (f) => f.name,
+    (f) => folderEdited(f.id),
+  );
+  const filed = (b: Board) => (b.folderId && doc.folders[b.folderId] ? b.folderId : null);
+  const items = order(
+    allProjects.filter((b) => filed(b) === (folder ? folder.id : null)),
+    (b) => b.title,
+    (b) => boardEdited(b.id),
+  );
+  const setSort = (by: 'name' | 'edited') =>
+    // Clicking the current column flips the order; a new column starts A–Z or newest first.
+    setUI({ projectsSort: sort.by === by ? { by, desc: !sort.desc } : { by, desc: by === 'edited' } });
 
   const trail = [];
   for (let f = folder; f; f = f.parentId ? doc.folders[f.parentId] : undefined) trail.unshift(f);
@@ -105,7 +140,7 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
     <main
       className="projects-page"
       aria-label="Projects"
-      onContextMenu={(e) => !(e.target as Element).closest('.folder-tile, .project-tile') && openContextMenu(e, placeMenu(folder?.id, 'page'))}
+      onContextMenu={(e) => !(e.target as Element).closest('.folder-tile, .project-tile, .list-row') && openContextMenu(e, placeMenu(folder?.id, 'page'))}
     >
       <div className="projects-head">
         <nav className="projects-trail" aria-label="Folder path">
@@ -135,32 +170,104 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
         </div>
       </div>
 
-      {!folder && doc.boards[doc.rootId] && (
-        <section>
-          <h2 className="projects-label">Home</h2>
-          <div className="project-grid">
-            <button
-              className="project-tile"
-              onClick={() => openBoard(doc.rootId)}
-              onContextMenu={(e) => openContextMenu(e, [{ label: 'Open', onSelect: () => openBoard(doc.rootId) }])}
-              title="Home"
-            >
-              <Thumbnail doc={doc} board={doc.boards[doc.rootId]} />
-              <span className="project-tile-info">
-                <span className="home-tile-icon"><Home size={14} /></span>
-                <span className="project-tile-text">
-                  <span className="project-tile-name">Home</span>
-                  <span className="project-tile-meta">
-                    {countCards(doc, doc.rootId) === 1 ? '1 card' : `${countCards(doc, doc.rootId)} cards`}
-                  </span>
-                </span>
-              </span>
+      <div className="projects-tools">
+        <label className="sort-by">
+          Sort by
+          <select value={sort.by} onChange={(e) => setSort(e.target.value as 'name' | 'edited')}>
+            <option value="name">Name</option>
+            <option value="edited">Last edited</option>
+          </select>
+        </label>
+        <button
+          className="icon-btn"
+          onClick={() => setUI({ projectsSort: { ...sort, desc: !sort.desc } })}
+          aria-label={sort.desc ? 'Sort ascending' : 'Sort descending'}
+          title={sort.by === 'name' ? (sort.desc ? 'Z to A' : 'A to Z') : sort.desc ? 'Newest first' : 'Oldest first'}
+        >
+          {sort.desc ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
+        </button>
+        <div className="view-switch" role="group" aria-label="View">
+          <button aria-pressed={view === 'grid'} onClick={() => setUI({ projectsView: 'grid' })} title="Grid view" aria-label="Grid view">
+            <LayoutGrid size={16} />
+          </button>
+          <button aria-pressed={view === 'list'} onClick={() => setUI({ projectsView: 'list' })} title="List view" aria-label="List view">
+            <List size={16} />
+          </button>
+        </div>
+      </div>
+
+      {view === 'list' && (
+        <div className="file-list" role="table" aria-label="Folders and projects">
+          <div className="list-head" role="row">
+            <button role="columnheader" onClick={() => setSort('name')} aria-sort={sort.by === 'name' ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+              Name {sort.by === 'name' && (sort.desc ? <ArrowDown size={13} /> : <ArrowUp size={13} />)}
+            </button>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Contents</span>
+            <button role="columnheader" onClick={() => setSort('edited')} aria-sort={sort.by === 'edited' ? (sort.desc ? 'descending' : 'ascending') : 'none'}>
+              Last edited {sort.by === 'edited' && (sort.desc ? <ArrowDown size={13} /> : <ArrowUp size={13} />)}
             </button>
           </div>
-        </section>
+          {subfolders.map((f) => {
+            const n = countIn(f.id);
+            return (
+              <div
+                key={f.id}
+                role="row"
+                className={`list-row ${dropOn === f.id ? 'drop-over' : ''}`}
+                onClick={() => renaming !== f.id && browse(f.id)}
+                onContextMenu={(e) => openContextMenu(e, folderMenu(f.id, 'page'))}
+                draggable={renaming !== f.id}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(FOLDER_MIME, f.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragEnd={() => setDropOn(null)}
+                {...dropTarget(f.id)}
+              >
+                <span className="list-name">
+                  <Folder size={18} className="folder-tile-icon" aria-hidden="true" />
+                  {renaming === f.id ? <RenameInput value={f.name} label="Folder name" onCommit={(v) => renameFolder(f.id, v)} /> : f.name}
+                </span>
+                <span>Folder</span>
+                <span>{n === 1 ? '1 project' : `${n} projects`}</span>
+                <span>{edited(folderEdited(f.id))}</span>
+              </div>
+            );
+          })}
+          {items.map((b) => {
+            const n = countCards(doc, b.id);
+            return (
+              <div
+                key={b.id}
+                role="row"
+                className="list-row"
+                onClick={() => renaming !== b.id && openBoard(b.id)}
+                onContextMenu={(e) => openContextMenu(e, projectMenu(b.id, 'page'))}
+                draggable={renaming !== b.id}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(BOARD_MIME, b.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragEnd={() => setDropOn(null)}
+              >
+                <span className="list-name">
+                  <BoardIcon icon={b.icon} color={b.color} size={22} />
+                  {renaming === b.id ? <RenameInput value={b.title} label="Project name" onCommit={(v) => renameProject(b.id, v)} /> : b.title || 'Untitled'}
+                </span>
+                <span>Project</span>
+                <span>{n === 1 ? '1 card' : `${n} cards`}</span>
+                <span>{edited(boardEdited(b.id))}</span>
+              </div>
+            );
+          })}
+          {!subfolders.length && !items.length && folder && (
+            <p className="projects-empty list-empty">No projects in this folder yet. Drag one here, or create a new one.</p>
+          )}
+        </div>
       )}
 
-      {subfolders.length > 0 && (
+      {view === 'grid' && subfolders.length > 0 && (
         <section>
           <h2 className="projects-label">Folders</h2>
           <div className="folder-grid">
@@ -202,7 +309,7 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
       )}
 
       {/* At the top level, a list where every project is in a folder needs no empty section. */}
-      {(items.length > 0 || folder || subfolders.length === 0) && (
+      {view === 'grid' && (items.length > 0 || folder || subfolders.length === 0) && (
         <section>
           <h2 className="projects-label">Projects</h2>
           {items.length ? (

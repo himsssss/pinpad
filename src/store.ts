@@ -52,8 +52,9 @@ function setState(next: Partial<State>) {
  *   text edit undoes as one step.
  */
 export function mutate(recipe: (d: Draft<Doc>) => void, history: 'push' | 'pending' | 'none' = 'push') {
-  const next = produce(state.doc, recipe);
+  let next = produce(state.doc, recipe);
   if (next === state.doc) return;
+  next = stampEdited(state.doc, next);
   if (history === 'push') record(state.doc);
   else if (history === 'pending' && pendingBase) {
     record(pendingBase);
@@ -61,6 +62,26 @@ export function mutate(recipe: (d: Draft<Doc>) => void, history: 'push' | 'pendi
   }
   setState({ doc: next, saved: false });
   schedulePersist();
+}
+
+/**
+ * Marks boards whose record or cards changed with the time, for "Last edited" on the
+ * Projects page. Unchanged objects are shared between versions (immer), so this only
+ * compares references.
+ */
+function stampEdited(prev: Doc, next: Doc) {
+  const touched = new Set<string>();
+  if (next.elements !== prev.elements) {
+    for (const id in next.elements) if (next.elements[id] !== prev.elements[id]) touched.add(next.elements[id].boardId);
+    for (const id in prev.elements) if (!next.elements[id]) touched.add(prev.elements[id].boardId);
+  }
+  if (next.boards !== prev.boards) for (const id in next.boards) if (next.boards[id] !== prev.boards[id]) touched.add(id);
+  const now = Date.now();
+  const stale = [...touched].filter((id) => next.boards[id] && (next.boards[id].updatedAt ?? 0) < now - 1000);
+  if (!stale.length) return next;
+  return produce(next, (d) => {
+    for (const id of stale) d.boards[id].updatedAt = now;
+  });
 }
 
 function record(doc: Doc) {
@@ -101,7 +122,7 @@ export function setUI(patch: Partial<UI> | ((ui: UI) => Partial<UI>)) {
   const p = typeof patch === 'function' ? patch(state.ui) : patch;
   const wasEditing = state.ui.editingId;
   setState({ ui: { ...state.ui, ...p } });
-  if ('views' in p || 'boardId' in p || 'sidebarOpen' in p || 'collapsedSections' in p) saveUI();
+  if ('views' in p || 'boardId' in p || 'sidebarOpen' in p || 'collapsedSections' in p || 'projectsView' in p || 'projectsSort' in p) saveUI();
   if (wasEditing && 'editingId' in p && p.editingId !== wasEditing) removeIfEmpty(wasEditing);
 }
 
@@ -164,14 +185,14 @@ let persistTimer: number | undefined;
 
 function saveUI() {
   try {
-    const { boardId, views, sidebarOpen, collapsedSections } = state.ui;
-    localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen, collapsedSections }));
+    const { boardId, views, sidebarOpen, collapsedSections, projectsView, projectsSort } = state.ui;
+    localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen, collapsedSections, projectsView, projectsSort }));
   } catch {
     // Storage can be unavailable (private mode); the board still works.
   }
 }
 
-function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'collapsedSections'>> | undefined {
+function loadUI(): Partial<Pick<UI, 'boardId' | 'views' | 'sidebarOpen' | 'collapsedSections' | 'projectsView' | 'projectsSort'>> | undefined {
   try {
     return JSON.parse(localStorage.getItem(UI_KEY) ?? 'null') ?? undefined;
   } catch {
@@ -524,6 +545,8 @@ export async function initStore() {
       playingId: null,
       sidebarOpen: !isPhone() && (savedUI?.sidebarOpen ?? true),
       collapsedSections: savedUI?.collapsedSections ?? [],
+      projectsView: savedUI?.projectsView === 'list' ? 'list' : 'grid',
+      projectsSort: savedUI?.projectsSort ?? { by: 'name', desc: false },
       draw: null,
       selection: [],
       editingId: null,
