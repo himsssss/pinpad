@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { ChevronRight, Folder, FolderPlus, Home, Plus } from 'lucide-react';
 import type { Board, Doc, El } from '../types';
-import { browse, mutate, openBoard, useStore } from '../store';
-import { countCards, projects, uid } from '../doc';
+import { browse, openBoard, useStore } from '../store';
+import { countCards, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
-import { BOARD_MIME, fileBoard, newProject } from './Sidebar';
+import { BOARD_MIME, FOLDER_MIME, createFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject } from '../projectActions';
+import { folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
+import { RenameInput } from './Sidebar';
 
 /** Rough on-board height of a card, for the thumbnails (cards size their own height). */
 function cardHeight(el: El) {
@@ -62,6 +64,7 @@ function Thumbnail({ doc, board }: { doc: Doc; board: Board }) {
 export function ProjectsPage({ folderId }: { folderId: string | null }) {
   const doc = useStore((s) => s.doc);
   const rootName = useStore((s) => s.storageName) ?? 'Projects';
+  const renaming = useStore((s) => (s.ui.renaming?.where === 'page' ? s.ui.renaming.id : null));
   const [dropOn, setDropOn] = useState<string | null>(null);
   const folder = folderId ? doc.folders[folderId] : undefined;
 
@@ -79,32 +82,31 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
   const trail = [];
   for (let f = folder; f; f = f.parentId ? doc.folders[f.parentId] : undefined) trail.unshift(f);
 
-  const newFolder = () => {
-    const id = uid();
-    const order = Math.max(0, ...subfolders.map((f) => f.order)) + 1;
-    mutate((d) => {
-      d.folders[id] = { id, name: 'New folder', order, ...(folder ? { parentId: folder.id } : {}) };
-    });
-  };
-
+  /** Projects and folders dragged onto a folder tile or a folder in the path move into it. */
   const dropTarget = (id: string) => ({
     onDragOver: (e: React.DragEvent) => {
-      if (!e.dataTransfer.types.includes(BOARD_MIME)) return;
+      if (!e.dataTransfer.types.includes(BOARD_MIME) && !e.dataTransfer.types.includes(FOLDER_MIME)) return;
       e.preventDefault();
       setDropOn(id);
     },
     onDragLeave: () => setDropOn((cur) => (cur === id ? null : cur)),
     onDrop: (e: React.DragEvent) => {
       const board = e.dataTransfer.getData(BOARD_MIME);
+      const moved = e.dataTransfer.getData(FOLDER_MIME);
       setDropOn(null);
-      if (!board) return;
+      if (!board && !moved) return;
       e.preventDefault();
-      fileBoard(board, id);
+      if (board) fileBoard(board, id);
+      if (moved && moved !== id) moveFolder(moved, id || undefined);
     },
   });
 
   return (
-    <main className="projects-page" aria-label="Projects">
+    <main
+      className="projects-page"
+      aria-label="Projects"
+      onContextMenu={(e) => !(e.target as Element).closest('.folder-tile, .project-tile') && openContextMenu(e, placeMenu(folder?.id, 'page'))}
+    >
       <div className="projects-head">
         <nav className="projects-trail" aria-label="Folder path">
           <button onClick={() => browse(null)} {...(folder ? dropTarget('') : {})} className={dropOn === '' ? 'drop-over' : ''}>
@@ -124,7 +126,7 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
           ))}
         </nav>
         <div className="projects-actions">
-          <button className="btn-secondary" onClick={newFolder}>
+          <button className="btn-secondary" onClick={() => createFolder(folder?.id, 'page')}>
             <FolderPlus size={16} /> New folder
           </button>
           <button className="btn-primary" onClick={() => newProject(folder?.id)}>
@@ -137,7 +139,12 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
         <section>
           <h2 className="projects-label">Home</h2>
           <div className="project-grid">
-            <button className="project-tile" onClick={() => openBoard(doc.rootId)} title="Home">
+            <button
+              className="project-tile"
+              onClick={() => openBoard(doc.rootId)}
+              onContextMenu={(e) => openContextMenu(e, [{ label: 'Open', onSelect: () => openBoard(doc.rootId) }])}
+              title="Home"
+            >
               <Thumbnail doc={doc} board={doc.boards[doc.rootId]} />
               <span className="project-tile-info">
                 <span className="home-tile-icon"><Home size={14} /></span>
@@ -159,17 +166,34 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
           <div className="folder-grid">
             {subfolders.map((f) => {
               const n = countIn(f.id);
+              const count = <span className="folder-tile-count">{n === 1 ? '1 project' : `${n} projects`}</span>;
+              if (renaming === f.id) {
+                return (
+                  <div key={f.id} className="folder-tile">
+                    <Folder size={20} className="folder-tile-icon" aria-hidden="true" />
+                    <RenameInput value={f.name} label="Folder name" onCommit={(v) => renameFolder(f.id, v)} />
+                    {count}
+                  </div>
+                );
+              }
               return (
                 <button
                   key={f.id}
                   className={`folder-tile ${dropOn === f.id ? 'drop-over' : ''}`}
                   onClick={() => browse(f.id)}
+                  onContextMenu={(e) => openContextMenu(e, folderMenu(f.id, 'page'))}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(FOLDER_MIME, f.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                  onDragEnd={() => setDropOn(null)}
                   title={f.name}
                   {...dropTarget(f.id)}
                 >
                   <Folder size={20} className="folder-tile-icon" aria-hidden="true" />
                   <span className="folder-tile-name">{f.name}</span>
-                  <span className="folder-tile-count">{n === 1 ? '1 project' : `${n} projects`}</span>
+                  {count}
                 </button>
               );
             })}
@@ -185,12 +209,15 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
             <div className="project-grid">
               {items.map((b) => {
                 const n = countCards(doc, b.id);
+                // While its name is edited the card isn't a button, so typing goes to the name.
+                const Tile = renaming === b.id ? 'div' : 'button';
                 return (
-                  <button
+                  <Tile
                     key={b.id}
                     className="project-tile"
-                    onClick={() => openBoard(b.id)}
-                    draggable
+                    onClick={() => renaming !== b.id && openBoard(b.id)}
+                    onContextMenu={(e) => openContextMenu(e, projectMenu(b.id, 'page'))}
+                    draggable={renaming !== b.id}
                     onDragStart={(e) => {
                       e.dataTransfer.setData(BOARD_MIME, b.id);
                       e.dataTransfer.effectAllowed = 'move';
@@ -202,11 +229,15 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
                     <span className="project-tile-info">
                       <BoardIcon icon={b.icon} color={b.color} size={22} />
                       <span className="project-tile-text">
-                        <span className="project-tile-name">{b.title || 'Untitled'}</span>
+                        {renaming === b.id ? (
+                          <RenameInput value={b.title} label="Project name" onCommit={(v) => renameProject(b.id, v)} />
+                        ) : (
+                          <span className="project-tile-name">{b.title || 'Untitled'}</span>
+                        )}
                         <span className="project-tile-meta">{n === 1 ? '1 card' : `${n} cards`}</span>
                       </span>
                     </span>
-                  </button>
+                  </Tile>
                 );
               })}
             </div>

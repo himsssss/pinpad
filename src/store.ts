@@ -529,6 +529,7 @@ export async function initStore() {
       views: savedUI?.views ?? {},
       dropTarget: null,
       guides: null,
+      renaming: null,
       browsing: null,
     },
     canUndo: false,

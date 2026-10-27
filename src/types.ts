@@ -127,6 +127,11 @@ export interface DrawMode {
   drawingId: string | null;
 }
 
+export interface Renaming {
+  id: string;
+  where: 'sidebar' | 'page';
+}
+
 export interface Guides {
   /** Vertical guides: x, from y1 to y2. */
   v: { x: number; y1: number; y2: number }[];
@@ -151,6 +156,8 @@ export interface UI {
   dropTarget: DropTarget | null;
   /** Alignment guides shown while dragging, in board coordinates. */
   guides: Guides | null;
+  /** Folder or project whose name is being edited, and where: the sidebar or the Projects page. */
+  renaming: Renaming | null;
   /** The Projects page, shown instead of a board: the folder it's showing ('' for the top level). */
   browsing: string | null;
 }

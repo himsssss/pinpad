@@ -1,45 +1,46 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronsLeft, Folder, FolderOpen, FolderPlus, Plus, Trash2 } from 'lucide-react';
 import type { Board } from '../types';
-import { browse, getState, mutate, openBoard, setUI, usingDrive, useStore } from '../store';
+import { browse, mutate, openBoard, setUI, usingDrive, useStore } from '../store';
 import { DriveIcon } from './DriveIcon';
-import { boardPath, createElement, maxZ, projects, uid } from '../doc';
+import { boardPath, projects } from '../doc';
 import { BoardIcon } from './BoardIcon';
 import { MOD } from '../shortcuts';
+import {
+  BOARD_MIME, FOLDER_MIME, createFolder, deleteFolder, fileBoard, moveFolder, newProject, renameFolder, renameProject,
+} from '../projectActions';
+import { folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
 
-export const BOARD_MIME = 'application/x-pinpad-board';
-const FOLDER_MIME = 'application/x-pinpad-folder';
-
-/** Adds a board to Home (right of everything already there), files it, and opens it. */
-export function newProject(folderId?: string) {
-  const { doc } = getState();
-  const onHome = Object.values(doc.elements).filter((e) => e.boardId === doc.rootId && !e.columnId && e.type !== 'line');
-  const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
-  const { el, board } = createElement('board', doc.rootId, x, 80, maxZ(doc) + 1);
-  if (!board) return;
-  board.title = 'Untitled project';
-  board.folderId = folderId;
-  mutate((d) => {
-    d.elements[el.id] = el;
-    d.boards[board.id] = board;
-  });
-  openBoard(board.id);
-  // Let the user name it straight away in the board title field.
-  requestAnimationFrame(() => document.querySelector<HTMLInputElement>('.board-heading')?.select());
+/** Inline name editor for a folder or project, committed on Enter or blur. */
+export function RenameInput({ value, label, onCommit }: { value: string; label: string; onCommit: (value: string) => void }) {
+  return (
+    <input
+      className="folder-rename"
+      defaultValue={value}
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => {
+        onCommit(e.currentTarget.value);
+        setUI({ renaming: null });
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') setUI({ renaming: null });
+      }}
+      aria-label={label}
+    />
+  );
 }
 
-export function fileBoard(boardId: string, folderId: string) {
-  mutate((d) => {
-    if (d.boards[boardId]) d.boards[boardId].folderId = folderId || undefined;
-  });
-}
 
 export function Sidebar() {
   const open = useStore((s) => s.ui.sidebarOpen);
   const doc = useStore((s) => s.doc);
   const boardId = useStore((s) => s.ui.boardId);
   const canvasDrop = useStore((s) => (s.ui.dropTarget?.kind === 'folder' ? s.ui.dropTarget.id : null));
-  const [renaming, setRenaming] = useState<string | null>(null);
+  const renaming = useStore((s) => (s.ui.renaming?.where === 'sidebar' ? s.ui.renaming.id : null));
   const [htmlDrop, setHtmlDrop] = useState<string | null>(null);
   const collapsedSections = useStore((s) => s.ui.collapsedSections);
   const browsing = useStore((s) => s.ui.browsing);
@@ -89,33 +90,6 @@ export function Sidebar() {
     inFolder(folderId).length + childFolders(folderId).reduce((n, f) => n + totalIn(f.id), 0);
   const unfiled = allProjects.filter((b) => !b.folderId || !doc.folders[b.folderId]);
 
-  /** True if `folderId` is `ancestorId` or sits somewhere inside it. */
-  const isWithin = (folderId: string | undefined, ancestorId: string) => {
-    for (let id = folderId; id; id = doc.folders[id]?.parentId) if (id === ancestorId) return true;
-    return false;
-  };
-
-  const createFolder = (parentId?: string) => {
-    const id = uid();
-    const order = Math.max(0, ...childFolders(parentId).map((f) => f.order)) + 1;
-    mutate((d) => {
-      d.folders[id] = { id, name: parentId ? 'New subfolder' : 'New folder', order, parentId };
-      if (parentId) d.folders[parentId].collapsed = false;
-    });
-    if (isCollapsed('folders')) toggleSection('folders');
-    setRenaming(id);
-  };
-
-  const moveFolder = (folderId: string, parentId?: string) => {
-    if (parentId && isWithin(parentId, folderId)) return; // can't nest a folder inside itself
-    const order = Math.max(0, ...childFolders(parentId).map((f) => f.order)) + 1;
-    mutate((d) => {
-      d.folders[folderId].parentId = parentId;
-      d.folders[folderId].order = order;
-      if (parentId) d.folders[parentId].collapsed = false;
-    });
-  };
-
   /**
    * Drop-target props shared by canvas drags (data-drop-*) and sidebar drags (HTML5).
    * `folderId` is the folder to file into; '' means "no folder".
@@ -143,38 +117,30 @@ export function Sidebar() {
   });
   const isDropping = (key: string) => canvasDrop === key || htmlDrop === key;
 
-  const projectRow = (b: Board) => (
-    <button
-      key={b.id}
-      className={`project-row ${browsing === null && b.id === boardId ? 'current' : browsing === null && openPath.has(b.id) ? 'in-path' : ''}`}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(BOARD_MIME, b.id);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
-      onDragEnd={() => setHtmlDrop(null)}
-      onClick={() => openBoard(b.id)}
-      title={b.title}
-    >
-      <BoardIcon icon={b.icon} color={b.color} size={20} />
-      <span className="project-name">{b.title || 'Untitled'}</span>
-    </button>
-  );
-
-  const commitRename = (folderId: string, value: string) => {
-    const name = value.trim() || 'Untitled folder';
-    if (name !== doc.folders[folderId]?.name) mutate((d) => { d.folders[folderId].name = name; });
-    setRenaming(null);
-  };
-
-  /** Deleting a folder moves its subfolders and projects up one level. */
-  const deleteFolder = (folderId: string) =>
-    mutate((d) => {
-      const parentId = d.folders[folderId].parentId;
-      for (const f of Object.values(d.folders)) if (f.parentId === folderId) f.parentId = parentId;
-      for (const b of Object.values(d.boards)) if (b.folderId === folderId) b.folderId = parentId;
-      delete d.folders[folderId];
-    });
+  const projectRow = (b: Board) =>
+    renaming === b.id ? (
+      <div key={b.id} className="project-row renaming">
+        <BoardIcon icon={b.icon} color={b.color} size={20} />
+        <RenameInput value={b.title} label="Project name" onCommit={(v) => renameProject(b.id, v)} />
+      </div>
+    ) : (
+      <button
+        key={b.id}
+        className={`project-row ${browsing === null && b.id === boardId ? 'current' : browsing === null && openPath.has(b.id) ? 'in-path' : ''}`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(BOARD_MIME, b.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragEnd={() => setHtmlDrop(null)}
+        onClick={() => openBoard(b.id)}
+        onContextMenu={(e) => openContextMenu(e, projectMenu(b.id, 'sidebar'))}
+        title={b.title}
+      >
+        <BoardIcon icon={b.icon} color={b.color} size={20} />
+        <span className="project-name">{b.title || 'Untitled'}</span>
+      </button>
+    );
 
   const folderNode = (f: (typeof allFolders)[number]) => {
     const items = inFolder(f.id);
@@ -190,6 +156,7 @@ export function Sidebar() {
             e.dataTransfer.effectAllowed = 'move';
           }}
           onDragEnd={() => setHtmlDrop(null)}
+          onContextMenu={(e) => openContextMenu(e, folderMenu(f.id, 'sidebar'))}
           {...dropZone(f.id, { boards: true, folders: true })}
         >
           <button
@@ -201,20 +168,9 @@ export function Sidebar() {
           </button>
           <span className="sidebar-icon">{f.collapsed ? <Folder size={15} /> : <FolderOpen size={15} />}</span>
           {renaming === f.id ? (
-            <input
-              className="folder-rename"
-              defaultValue={f.name}
-              autoFocus
-              onFocus={(e) => e.currentTarget.select()}
-              onBlur={(e) => commitRename(f.id, e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-                if (e.key === 'Escape') setRenaming(null);
-              }}
-              aria-label="Folder name"
-            />
+            <RenameInput value={f.name} label="Folder name" onCommit={(v) => renameFolder(f.id, v)} />
           ) : (
-            <span className="folder-name" onClick={() => browse(f.id)} onDoubleClick={() => setRenaming(f.id)} title="Open folder · double-click to rename">
+            <span className="folder-name" onClick={() => browse(f.id)} onDoubleClick={() => setUI({ renaming: { id: f.id, where: 'sidebar' } })} title="Open folder · double-click to rename">
               {f.name}
             </span>
           )}
@@ -252,6 +208,7 @@ export function Sidebar() {
           or folder anywhere outside a folder moves it to the top level. */}
       <div
         className={`sidebar-section ${isDropping('') ? 'drop-over' : ''}`}
+        onContextMenu={(e) => openContextMenu(e, placeMenu(undefined, 'sidebar'))}
         {...dropZone('', { boards: true, folders: true })}
       >
         <div className="sidebar-heading">

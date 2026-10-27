@@ -9,6 +9,7 @@ import { SearchDialog } from './components/SearchDialog';
 import { ProjectsPage } from './components/ProjectsPage';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
+import { ContextMenu } from './components/ContextMenu';
 import { addElementAtCenter } from './actions';
 
 const isTypingTarget = (t: EventTarget | null) =>
@@ -149,6 +150,7 @@ export function App() {
       {browsing === null && <Toolbar />}
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
       <CardMenu />
+      <ContextMenu />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>
   );
