@@ -127,6 +127,13 @@ export interface DrawMode {
   drawingId: string | null;
 }
 
+export interface Guides {
+  /** Vertical guides: x, from y1 to y2. */
+  v: { x: number; y1: number; y2: number }[];
+  /** Horizontal guides: y, from x1 to x2. */
+  h: { y: number; x1: number; x2: number }[];
+}
+
 export interface UI {
   boardId: string;
   /** Link card whose media player is open; only one plays at a time. */
@@ -142,6 +149,8 @@ export interface UI {
   editPoint: { x: number; y: number } | null;
   views: Record<string, View>;
   dropTarget: DropTarget | null;
+  /** Alignment guides shown while dragging, in board coordinates. */
+  guides: Guides | null;
   /** The Projects page, shown instead of a board: the folder it's showing ('' for the top level). */
   browsing: string | null;
 }

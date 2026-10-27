@@ -59,5 +59,9 @@
       "shortcutName": "Pinpad",
       "artifactName": "Pinpad-Setup-${version}-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "html-to-image": "^1.11.11",
+    "jspdf": "^2.5.2"
   }
 }

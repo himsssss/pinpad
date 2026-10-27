@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Folder, Download, FolderCog, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Folder, Download, FileImage, FileText, FolderCog, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { exportBoardImage, exportBoardPdf } from '../exportBoard';
 import type { Doc } from '../types';
 import { browse, getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { parseWorkspace } from '../workspaceFiles';
@@ -57,6 +58,9 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
   const saved = useStore((s) => s.saved);
   const storageError = useStore((s) => s.storageError);
   const [menu, setMenu] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
   const [storageOpen, setStorageOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const path = boardPath(getState().doc, boardId);
@@ -70,6 +74,24 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
     window.addEventListener('pointerdown', close);
     return () => window.removeEventListener('pointerdown', close);
   }, [menu]);
+  useEffect(() => {
+    if (!exportMenu) return;
+    const close = (e: PointerEvent) => !exportRef.current?.contains(e.target as Node) && setExportMenu(false);
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [exportMenu]);
+
+  const exportAs = (run: () => Promise<void>) => async () => {
+    setExportMenu(false);
+    setExporting(true);
+    try {
+      await run();
+    } catch (err) {
+      alert(`Couldn't export: ${(err as Error).message}`);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const commitTitle = () => {
     const t = title.trim() || 'Untitled';
@@ -161,9 +183,25 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
             </div>
           )}
         </div>
-        <button className="btn-primary" onClick={() => downloadJSON(getState().doc)} title="Export your workspace as a file">
-          <Download size={15} /> <span className="export-label">Export</span>
-        </button>
+        <div className="menu-wrap" ref={exportRef}>
+          <button className="btn-primary" onClick={() => setExportMenu((m) => !m)} disabled={exporting} aria-haspopup="menu" title="Export">
+            <Download size={15} /> <span className="export-label">{exporting ? 'Exporting…' : 'Export'}</span>
+          </button>
+          {exportMenu && (
+            <div className="menu" role="menu">
+              <button role="menuitem" disabled={browsing !== null} onClick={exportAs(exportBoardImage)}>
+                <FileImage size={14} /> This board as an image (PNG)
+              </button>
+              <button role="menuitem" disabled={browsing !== null} onClick={exportAs(exportBoardPdf)}>
+                <FileText size={14} /> This board as a PDF
+              </button>
+              <div className="menu-sep" />
+              <button role="menuitem" onClick={() => { downloadJSON(getState().doc); setExportMenu(false); }}>
+                <HardDriveDownload size={14} /> Whole workspace (backup file)
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       {storageOpen && <StorageDialog onClose={() => setStorageOpen(false)} />}
     </>

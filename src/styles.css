@@ -775,3 +775,31 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
   .folder-tile { padding: 10px 12px; column-gap: 10px; }
   .dialog { padding: 16px 16px 20px; }
 }
+
+/* ---------- templates on an empty board ---------- */
+
+.templates { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; margin-top: 28px; max-width: 560px; pointer-events: auto; }
+.templates-label { width: 100%; font-size: 13px !important; color: var(--stone) !important; margin-bottom: 2px; }
+.template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: var(--r-full);
+  background: var(--panel);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  font-weight: 500;
+  transition: box-shadow 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.template-chip:hover { box-shadow: var(--shadow-3); transform: translateY(-1px); }
+.template-chip svg { color: var(--blue); }
+
+/* ---------- snap guides while dragging ---------- */
+
+.snap-guides { z-index: 2147482000; pointer-events: none; }
+.snap-guides line { stroke: #f24726; stroke-width: 1; stroke-dasharray: 4 3; }
+.menu-icons { display: flex; gap: 2px; }
+.menu .menu-icons button { width: auto; flex: 1; justify-content: center; padding: 7px 6px; gap: 6px; font-size: 13px; }
+.menu button:disabled { opacity: 0.45; cursor: default; background: none; }

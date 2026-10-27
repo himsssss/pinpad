@@ -32,7 +32,11 @@ Get the latest build from the [Releases](../../releases) page:
 - **Columns** to stack related cards, and **lines** that connect cards and follow them
 - **Folders sidebar** with subfolders; drag projects between folders
 - Pan, zoom, marquee select, undo/redo, copy/paste, and search across every board (Ctrl/⌘ K)
-- Export and import your whole workspace as JSON
+- Export and import your whole workspace as JSON, or export a board as a PNG image or PDF
+- Templates for empty boards: moodboard, kanban, weekly plan, brainstorm, storyboard
+- Snap guides while dragging, and align or spread out selected cards (right-click menu)
+- Installable website: add it to your phone's home screen, open it offline, and share links
+  into it from other apps
 - **Storage folder (desktop apps):** each board is saved as its own JSON file, with a folder
   per project (inside its sidebar folder), in Documents/Pinpad or any folder you choose under
   ⚙ → Storage location. A synced folder works as a backup.

@@ -9,6 +9,7 @@ import { SearchDialog } from './components/SearchDialog';
 import { ProjectsPage } from './components/ProjectsPage';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
+import { addElementAtCenter } from './actions';
 
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
@@ -26,6 +27,16 @@ export function App() {
   useEffect(() => {
     document.title = boardTitle ? `${boardTitle} – Pinpad` : 'Pinpad';
   }, [boardTitle]);
+
+  // Something shared to the installed app from another app (a link or text) becomes a card.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const text = params.get('text') ?? '';
+    const shared = params.get('url') || text.match(/https?:\/\/\S+/)?.[0] || text || params.get('title');
+    if (!shared) return;
+    history.replaceState(null, '', location.pathname);
+    addElementAtCenter(/^https?:\/\/\S+$/.test(shared.trim()) ? 'link' : 'note', shared.trim());
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

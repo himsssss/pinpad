@@ -1,5 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpToLine, Copy, FolderOpen, Pencil, Trash2 } from 'lucide-react';
+import {
+  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter,
+  AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter, ArrowDownToLine, ArrowUpToLine, Copy,
+  FolderOpen, Pencil, Trash2, type LucideIcon,
+} from 'lucide-react';
+import { worldRect } from '../interactions';
 import { getState, mutate, openBoard, startEditing } from '../store';
 import { deleteSelection, duplicateSelection } from '../actions';
 import { MOD } from '../shortcuts';
@@ -20,6 +25,66 @@ function restack(toFront: boolean) {
     for (const id of [...ids].sort((a, b) => d.elements[a].z - d.elements[b].z)) d.elements[id].z = ++z;
   });
 }
+
+type Edge = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
+
+/** The selected cards on the board itself (not lines, not cards inside columns), with their boxes. */
+function selectedBoxes() {
+  const { doc, ui } = getState();
+  return ui.selection
+    .map((id) => doc.elements[id])
+    .filter((el) => el && el.type !== 'line' && !el.columnId)
+    .map((el) => ({ id: el.id, box: worldRect(el.id) }))
+    .filter((c): c is { id: string; box: NonNullable<ReturnType<typeof worldRect>> } => !!c.box);
+}
+
+/** Lines up the selected cards on one edge or center of the group. */
+function align(edge: Edge) {
+  const cards = selectedBoxes();
+  if (cards.length < 2) return;
+  const left = Math.min(...cards.map((c) => c.box.x));
+  const right = Math.max(...cards.map((c) => c.box.x + c.box.w));
+  const top = Math.min(...cards.map((c) => c.box.y));
+  const bottom = Math.max(...cards.map((c) => c.box.y + c.box.h));
+  mutate((d) => {
+    for (const { id, box } of cards) {
+      const el = d.elements[id];
+      if (edge === 'left') el.x = Math.round(left);
+      if (edge === 'hcenter') el.x = Math.round((left + right) / 2 - box.w / 2);
+      if (edge === 'right') el.x = Math.round(right - box.w);
+      if (edge === 'top') el.y = Math.round(top);
+      if (edge === 'vcenter') el.y = Math.round((top + bottom) / 2 - box.h / 2);
+      if (edge === 'bottom') el.y = Math.round(bottom - box.h);
+    }
+  });
+}
+
+/** Spaces the selected cards evenly between the outermost two, keeping their order. */
+function distribute(axis: 'x' | 'y') {
+  const cards = selectedBoxes();
+  if (cards.length < 3) return;
+  const size = (c: (typeof cards)[number]) => (axis === 'x' ? c.box.w : c.box.h);
+  cards.sort((a, b) => a.box[axis] - b.box[axis]);
+  const start = cards[0].box[axis];
+  const end = cards[cards.length - 1].box[axis] + size(cards[cards.length - 1]);
+  const gap = (end - start - cards.reduce((n, c) => n + size(c), 0)) / (cards.length - 1);
+  let at = start;
+  mutate((d) => {
+    for (const c of cards) {
+      d.elements[c.id][axis] = Math.round(at);
+      at += size(c) + gap;
+    }
+  });
+}
+
+const ALIGN: [Edge, LucideIcon, string][] = [
+  ['left', AlignStartVertical, 'Align left'],
+  ['hcenter', AlignCenterVertical, 'Align centers horizontally'],
+  ['right', AlignEndVertical, 'Align right'],
+  ['top', AlignStartHorizontal, 'Align top'],
+  ['vcenter', AlignCenterHorizontal, 'Align centers vertically'],
+  ['bottom', AlignEndHorizontal, 'Align bottom'],
+];
 
 /** Right-click (or long-press) menu for the selected cards. */
 export function CardMenu() {
@@ -62,6 +127,7 @@ export function CardMenu() {
   const selected = ui.selection.map((id) => doc.elements[id]).filter(Boolean);
   if (!selected.length) return null;
   const single = selected.length === 1 ? selected[0] : null;
+  const placeable = selected.filter((el) => el.type !== 'line' && !el.columnId).length;
   const run = (fn: () => void) => () => {
     setAt(null);
     fn();
@@ -78,6 +144,29 @@ export function CardMenu() {
         </button>
       )}
       <button role="menuitem" onClick={run(duplicateSelection)}><Copy size={14} /> Duplicate <kbd className="menu-kbd">{MOD}D</kbd></button>
+      {placeable >= 2 && (
+        <>
+          <div className="menu-sep" />
+          <div className="menu-icons" role="group" aria-label="Align">
+            {ALIGN.map(([edge, Icon, label]) => (
+              <button key={edge} role="menuitem" aria-label={label} title={label} onClick={run(() => align(edge))}>
+                <Icon size={16} />
+              </button>
+            ))}
+          </div>
+          {placeable >= 3 && (
+            <div className="menu-icons" role="group" aria-label="Spread evenly">
+              <button role="menuitem" title="Spread evenly across" aria-label="Spread evenly across" onClick={run(() => distribute('x'))}>
+                <AlignHorizontalDistributeCenter size={16} /> <span>Spread across</span>
+              </button>
+              <button role="menuitem" title="Spread evenly down" aria-label="Spread evenly down" onClick={run(() => distribute('y'))}>
+                <AlignVerticalDistributeCenter size={16} /> <span>Spread down</span>
+              </button>
+            </div>
+          )}
+          <div className="menu-sep" />
+        </>
+      )}
       <button role="menuitem" onClick={run(() => restack(true))}><ArrowUpToLine size={14} /> Bring to front</button>
       <button role="menuitem" onClick={run(() => restack(false))}><ArrowDownToLine size={14} /> Send to back</button>
       <div className="menu-sep" />

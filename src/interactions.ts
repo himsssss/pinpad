@@ -1,7 +1,51 @@
 import { checkpoint, currentView, getState, mutate, select, setUI } from './store';
 import { createElement, deleteElements, maxZ, moveElementsToBoard } from './doc';
 import type { LineEl } from './types';
-import type { DropTarget } from './types';
+import type { DropTarget, Guides } from './types';
+
+type Box = { x: number; y: number; w: number; h: number };
+
+/** How close (on screen) an edge or center must come to another card's to snap to it. */
+const SNAP_PX = 6;
+
+/**
+ * Snaps a dragged group's box to the edges and centers of the other cards: returns the
+ * adjusted offset and the guide lines to draw.
+ */
+function snap(group: Box, others: Box[], dx: number, dy: number, zoom: number) {
+  const limit = SNAP_PX / zoom;
+  const moved = { x: group.x + dx, y: group.y + dy, w: group.w, h: group.h };
+  const xs = [moved.x, moved.x + moved.w / 2, moved.x + moved.w];
+  const ys = [moved.y, moved.y + moved.h / 2, moved.y + moved.h];
+  let bestX: { d: number; at: number } | null = null;
+  let bestY: { d: number; at: number } | null = null;
+  for (const o of others) {
+    for (const t of [o.x, o.x + o.w / 2, o.x + o.w]) {
+      for (const s of xs) if (Math.abs(t - s) <= limit && (!bestX || Math.abs(t - s) < Math.abs(bestX.d))) bestX = { d: t - s, at: t };
+    }
+    for (const t of [o.y, o.y + o.h / 2, o.y + o.h]) {
+      for (const s of ys) if (Math.abs(t - s) <= limit && (!bestY || Math.abs(t - s) < Math.abs(bestY.d))) bestY = { d: t - s, at: t };
+    }
+  }
+  const sx = dx + (bestX?.d ?? 0);
+  const sy = dy + (bestY?.d ?? 0);
+  const final = { x: group.x + sx, y: group.y + sy, w: group.w, h: group.h };
+  const guides: Guides = { v: [], h: [] };
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.5;
+  if (bestX) {
+    const hits = others.filter((o) => [o.x, o.x + o.w / 2, o.x + o.w].some((t) => near(t, bestX!.at)));
+    const y1 = Math.min(final.y, ...hits.map((o) => o.y));
+    const y2 = Math.max(final.y + final.h, ...hits.map((o) => o.y + o.h));
+    guides.v.push({ x: bestX.at, y1, y2 });
+  }
+  if (bestY) {
+    const hits = others.filter((o) => [o.y, o.y + o.h / 2, o.y + o.h].some((t) => near(t, bestY!.at)));
+    const x1 = Math.min(final.x, ...hits.map((o) => o.x));
+    const x2 = Math.max(final.x + final.w, ...hits.map((o) => o.x + o.w));
+    guides.h.push({ y: bestY.at, x1, x2 });
+  }
+  return { dx: sx, dy: sy, guides: guides.v.length || guides.h.length ? guides : null };
+}
 
 let canvasEl: HTMLElement | null = null;
 
@@ -148,6 +192,9 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
   let origins = new Map<string, { x: number; y: number }>();
   let lineOrigins = new Map<string, { s?: { x: number; y: number }; e?: { x: number; y: number } }>();
   let ids: string[] = [];
+  /** The dragged cards' box and the other cards' boxes, measured when the drag starts. */
+  let group: Box | null = null;
+  let others: Box[] = [];
 
   const begin = () => {
     dragging = true;
@@ -188,6 +235,17 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
         e: el.end.elId ? undefined : { x: el.end.x, y: el.end.y },
       });
     }
+    const boxes = ids.filter((sid) => fresh.elements[sid].type !== 'line').map(worldRect).filter((r): r is Box => !!r);
+    if (boxes.length) {
+      const x = Math.min(...boxes.map((b) => b.x));
+      const y = Math.min(...boxes.map((b) => b.y));
+      group = { x, y, w: Math.max(...boxes.map((b) => b.x + b.w)) - x, h: Math.max(...boxes.map((b) => b.y + b.h)) - y };
+    }
+    const dragged = new Set(ids);
+    others = Object.values(fresh.elements)
+      .filter((el) => el.boardId === getState().ui.boardId && !el.columnId && el.type !== 'line' && !dragged.has(el.id))
+      .map((el) => worldRect(el.id))
+      .filter((r): r is Box => !!r);
     document.body.classList.add('is-dragging');
   };
 
@@ -197,8 +255,12 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
       begin();
     }
     const zoom = currentView().zoom;
-    const dx = (ev.clientX - startX) / zoom;
-    const dy = (ev.clientY - startY) / zoom;
+    let dx = (ev.clientX - startX) / zoom;
+    let dy = (ev.clientY - startY) / zoom;
+    // Option/Alt drags freely, without snapping.
+    const snapped = group && !ev.altKey ? snap(group, others, dx, dy, zoom) : null;
+    if (snapped) ({ dx, dy } = snapped);
+    if (JSON.stringify(getState().ui.guides) !== JSON.stringify(snapped?.guides ?? null)) setUI({ guides: snapped?.guides ?? null });
     mutate((d) => {
       for (const [sid, o] of origins) {
         const el = d.elements[sid];
@@ -218,6 +280,7 @@ export function beginCardPointer(e: React.PointerEvent, id: string, onClick: (ev
 
   const up = (ev: PointerEvent, cancelled: boolean) => {
     document.body.classList.remove('is-dragging');
+    if (getState().ui.guides) setUI({ guides: null });
     if (!dragging) {
       if (cancelled) return;
       if (ev.shiftKey) {

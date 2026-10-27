@@ -7,6 +7,7 @@ import { addElement, addImages } from '../actions';
 import { readImage } from '../images';
 import { addStroke, eraseAt, strokePath } from '../drawing';
 import { CardFrame } from './CardFrame';
+import { TEMPLATES, applyTemplate } from '../templates';
 import { LinesLayer } from './LinesLayer';
 
 const clampZoom = (z: number) => Math.min(3, Math.max(0.2, z));
@@ -21,6 +22,7 @@ export function Canvas() {
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const draw = useStore((s) => s.ui.draw);
+  const guides = useStore((s) => s.ui.guides);
   const [liveStroke, setLiveStroke] = useState<number[] | null>(null);
 
   const isEmpty = useMemo(() => !Object.values(elements).some((e) => e.boardId === boardId), [elements, boardId]);
@@ -175,7 +177,7 @@ export function Canvas() {
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .line-handle, .zoom-controls')) return;
+    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .line-handle, .zoom-controls, .templates')) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     window.getSelection()?.removeAllRanges();
     const startX = e.clientX;
@@ -211,7 +213,7 @@ export function Canvas() {
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .zoom-controls')) return;
+    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .zoom-controls, .templates')) return;
     // A double tap is handled as touch already; some browsers also report it as a double-click.
     if (Date.now() - touch.current.at < 800) return;
     const p = screenToWorld(e.clientX, e.clientY);
@@ -293,6 +295,12 @@ export function Canvas() {
           <CardFrame key={id} id={id} />
         ))}
         <LinesLayer boardId={boardId} layer="over" />
+        {guides && (
+          <svg className="lines-layer snap-guides" aria-hidden="true">
+            {guides.v.map((g, i) => <line key={`v${i}`} x1={g.x} x2={g.x} y1={g.y1 - 16} y2={g.y2 + 16} vectorEffect="non-scaling-stroke" />)}
+            {guides.h.map((g, i) => <line key={`h${i}`} y1={g.y} y2={g.y} x1={g.x1 - 16} x2={g.x2 + 16} vectorEffect="non-scaling-stroke" />)}
+          </svg>
+        )}
         {liveStroke && draw && (
           <svg className="lines-layer live-stroke">
             <path d={strokePath(liveStroke)} stroke={draw.color} strokeWidth={draw.size} />
@@ -312,6 +320,14 @@ export function Canvas() {
         <div className="empty-hint">
           <p>This board is empty</p>
           <span>Drag something from the toolbar, or double-click to add a note</span>
+          <div className="templates" role="group" aria-label="Start from a template">
+            <span className="templates-label">Or start from a template</span>
+            {TEMPLATES.map((t) => (
+              <button key={t.id} className="template-chip" onClick={() => applyTemplate(t)}>
+                <t.icon size={16} aria-hidden="true" /> {t.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       <div className="zoom-controls">
