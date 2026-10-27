@@ -238,7 +238,8 @@ function updateDropTarget(ev: PointerEvent, ids: string[]) {
   const doc = getState().doc;
   const dragged = new Set(ids);
   const hasColumn = ids.some((i) => doc.elements[i]?.type === 'column');
-  const hasBoard = ids.some((i) => doc.elements[i]?.type === 'board');
+  // Only projects (board cards on Home) can be filed in a sidebar folder.
+  const hasBoard = ids.some((i) => doc.elements[i]?.type === 'board' && doc.elements[i].boardId === doc.rootId);
   const onlyLines = ids.every((i) => doc.elements[i]?.type === 'line');
   let target: DropTarget | null = null;
   const overTrash = document.elementsFromPoint(ev.clientX, ev.clientY).some((n) => n.closest('[data-drop-kind="trash"]'));
@@ -284,7 +285,7 @@ function finishDrop(ids: string[], origins: Map<string, { x: number; y: number }
         if (!el || !o || el.type === 'line') continue;
         el.x = o.x;
         el.y = o.y;
-        if (el.type === 'board') d.boards[el.targetId].folderId = target.id || undefined;
+        if (el.type === 'board' && el.boardId === d.rootId) d.boards[el.targetId].folderId = target.id || undefined;
       }
     }, 'pending');
     return;

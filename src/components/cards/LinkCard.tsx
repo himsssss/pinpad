@@ -4,6 +4,7 @@ import type { LinkEl } from '../../types';
 import { getState, mutate, setUI, useStore } from '../../store';
 import { hostname, normalizeUrl } from '../../doc';
 import { fetchPreview } from '../../linkPreview';
+import { isSafeUrl } from '../../sanitize';
 import { iframeSrc, mediaEmbed, type MediaEmbed } from '../../media';
 import { Editable } from '../Editable';
 
@@ -104,7 +105,9 @@ export function LinkCard({ el, editing }: { el: LinkEl; editing: boolean }) {
 
   const play = () => {
     // A player that can't be embedded here (e.g. no wrapper) opens in the browser instead.
-    if (media?.kind === 'iframe' && !iframeSrc(media.src)) window.open(el.url, '_blank', 'noopener');
+    if (media?.kind === 'iframe' && !iframeSrc(media.src)) {
+      if (isSafeUrl(el.url)) window.open(el.url, '_blank', 'noopener');
+    }
     else setUI({ playingId: el.id, selection: [el.id] });
   };
 
@@ -150,9 +153,11 @@ export function LinkCard({ el, editing }: { el: LinkEl; editing: boolean }) {
               <X size={12} strokeWidth={2.5} /> Close
             </button>
           )}
-          <a href={el.url} target="_blank" rel="noreferrer noopener" data-nodrag aria-label="Open link">
-            <ExternalLink size={13} />
-          </a>
+          {isSafeUrl(el.url) && (
+            <a href={el.url} target="_blank" rel="noreferrer noopener" data-nodrag aria-label="Open link">
+              <ExternalLink size={13} />
+            </a>
+          )}
         </div>
         <Editable
           className="link-title"

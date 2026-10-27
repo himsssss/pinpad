@@ -36,7 +36,7 @@ declare global {
             scope: string;
             callback: (response: GisTokenResponse) => void;
             error_callback?: (error: { type: string; message?: string }) => void;
-          }): { requestAccessToken(overrides?: { prompt?: string }): void };
+          }): { requestAccessToken(overrides?: { prompt?: string; login_hint?: string }): void };
           revoke(token: string, done: () => void): void;
         };
       };
@@ -116,6 +116,19 @@ export function preloadGoogle() {
   return gisLoad;
 }
 
+/** Asks Google Identity Services for a token; it has to run straight from a click (it opens a popup). */
+function requestWebToken(overrides?: { prompt?: string; login_hint?: string }) {
+  return new Promise<GisTokenResponse>((resolve, reject) => {
+    const client = window.google!.accounts.oauth2.initTokenClient({
+      client_id: WEB_CLIENT_ID,
+      scope: SCOPE,
+      callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
+      error_callback: (e) => reject(new Error(e.type === 'popup_closed' ? 'Sign-in was cancelled' : e.message || 'Sign-in failed')),
+    });
+    client.requestAccessToken(overrides);
+  });
+}
+
 /** Signs in (showing Google's consent screen) and remembers the account's email. */
 export async function signIn() {
   const shell = native();
@@ -123,18 +136,34 @@ export async function signIn() {
     keep(await shell.signIn(DESKTOP_CLIENT));
   } else {
     await preloadGoogle();
-    const response = await new Promise<GisTokenResponse>((resolve, reject) => {
-      const client = window.google!.accounts.oauth2.initTokenClient({
-        client_id: WEB_CLIENT_ID,
-        scope: SCOPE,
-        callback: (r) => (r.error ? reject(new Error(r.error_description || r.error)) : resolve(r)),
-        error_callback: (e) => reject(new Error(e.type === 'popup_closed' ? 'Sign-in was cancelled' : e.message || 'Sign-in failed')),
-      });
-      client.requestAccessToken();
-    });
+    const response = await requestWebToken();
     keep({ accessToken: response.access_token, expiresIn: Number(response.expires_in) });
   }
   await rememberAccount();
+}
+
+let lastRenewal = 0;
+
+/** Whether the website's Google token has run out or will within a few minutes. */
+export function webTokenExpiring() {
+  return !native() && !!WEB_CLIENT_ID && !!googleAccount() && (!token || token.expiresAt - Date.now() < 5 * 60_000);
+}
+
+/**
+ * Renews the website's token for the account already connected, without the consent
+ * screen: Google's popup opens and closes by itself. Called from a click, at most once a
+ * minute; false when Google needs the user (or the popup was blocked).
+ */
+export async function renewWebToken() {
+  if (!window.google || Date.now() - lastRenewal < 60_000) return false;
+  lastRenewal = Date.now();
+  try {
+    const response = await requestWebToken({ prompt: '', login_hint: googleAccount() ?? undefined });
+    keep({ accessToken: response.access_token, expiresIn: Number(response.expires_in) });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** A valid access token, renewed silently in the desktop apps; throws SignInNeeded otherwise. */

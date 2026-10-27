@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
-import { getState, openBoard, startEditing, useStore } from '../store';
+import { getState, openBoard, select, startEditing, useStore } from '../store';
 import { beginCardPointer, beginResize } from '../interactions';
 import { isDark } from '../doc';
 import { focusAtPoint } from './Editable';
 import { ConnectHandle } from './ConnectHandle';
+import { openCardMenu } from './CardMenu';
 import { NoteCard } from './cards/NoteCard';
 import { TodoCard } from './cards/TodoCard';
 import { LinkCard } from './cards/LinkCard';
@@ -25,7 +26,12 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
     if (!editing || !ref.current) return;
     const node = ref.current;
     const point = getState().ui.editPoint;
-    requestAnimationFrame(() => focusAtPoint(node, point));
+    requestAnimationFrame(() => {
+      focusAtPoint(node, point);
+      // Renaming a board from its menu or toolbar selects the whole name, like a file name.
+      const title = node.querySelector('.board-title');
+      if (!point && title && document.activeElement === title) window.getSelection()?.selectAllChildren(title);
+    });
   }, [editing]);
 
   if (!el || el.type === 'line') return null;
@@ -42,7 +48,31 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
     }
     // Column children are their own cards; let the innermost frame handle the press.
     if (target.closest('[data-el-id]') !== ref.current) return;
+    const wasSelected = getState().ui.selection.includes(id);
+    // Long-press on a touch screen opens the card menu (iPhone and iPad send no contextmenu).
+    let longPressed = false;
+    if (e.pointerType === 'touch') {
+      const start = { x: e.clientX, y: e.clientY };
+      const timer = window.setTimeout(() => {
+        longPressed = true;
+        if (!getState().ui.selection.includes(id)) select([id]);
+        openCardMenu(start.x, start.y);
+      }, 500);
+      const stop = (ev: PointerEvent) => {
+        if (ev.type === 'pointermove' && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 8) return;
+        clearTimeout(timer);
+        window.removeEventListener('pointermove', stop);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+      };
+      window.addEventListener('pointermove', stop);
+      window.addEventListener('pointerup', stop);
+      window.addEventListener('pointercancel', stop);
+    }
     beginCardPointer(e, id, (ev) => {
+      if (longPressed) return;
+      // A board's title is renamed by clicking it once the card is selected, like a file name.
+      if (el.type === 'board' && wasSelected && target.closest('.board-title')) return startEditing(id, { x: ev.clientX, y: ev.clientY });
       if (el.type === 'board' || el.type === 'drawing') return;
       if (el.type === 'column' && !target.closest('[data-column-head]')) return;
       startEditing(id, { x: ev.clientX, y: ev.clientY });
@@ -79,6 +109,14 @@ export function CardFrame({ id, inColumn }: { id: string; inColumn?: boolean }) 
       onPointerDown={onPointerDown}
       // A native drag (of a link, image or selected text) would take the pointer away mid-move.
       onDragStart={(e) => !editing && e.preventDefault()}
+      onContextMenu={(e) => {
+        // While typing, keep the browser's own menu (spelling, paste).
+        if (editing && (e.target as HTMLElement).closest('[data-editor]')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (!getState().ui.selection.includes(id)) select([id]);
+        openCardMenu(e.clientX, e.clientY);
+      }}
       onDoubleClick={(e) => {
         e.stopPropagation();
         if (el.type === 'board') openBoard(el.targetId);

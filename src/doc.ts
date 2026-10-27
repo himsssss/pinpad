@@ -1,3 +1,4 @@
+import { current, isDraft } from 'immer';
 import type { Board, BoardEl, Doc, El, ElType, LineEl } from './types';
 
 export const uid = () => crypto.randomUUID();
@@ -145,6 +146,8 @@ export function cloneElements(doc: Doc, ids: string[], targetBoardId: string, dx
   const copyBoard = (boardId: string, parentId: string): string => {
     const src = doc.boards[boardId];
     const nb: Board = { ...src, id: uid(), parentId };
+    // Only projects (boards on Home) are filed in sidebar folders.
+    if (parentId !== doc.rootId) delete nb.folderId;
     doc.boards[nb.id] = nb;
     const inner = boardElements(doc, boardId).filter((e) => !e.columnId);
     copyAll(inner, nb.id, 0, 0);
@@ -152,7 +155,8 @@ export function cloneElements(doc: Doc, ids: string[], targetBoardId: string, dx
   };
 
   const copyOne = (src: El, boardId: string, ox: number, oy: number, columnId?: string): string => {
-    const copy = structuredClone(src) as El;
+    // Inside a mutate() the source is an immer draft (a Proxy), which structuredClone rejects.
+    const copy = structuredClone(isDraft(src) ? current(src) : src) as El;
     copy.id = uid();
     copy.boardId = boardId;
     copy.x += ox;
@@ -212,15 +216,21 @@ export function moveElementsToBoard(doc: Doc, ids: string[], targetBoardId: stri
   const existing = boardElements(doc, targetBoardId).filter((e) => !e.columnId && e.type !== 'line');
   const baseY = existing.length ? Math.max(...existing.map((e) => e.y)) + 220 : 120;
   const moved = new Set<string>();
+  const rehome = (card: El) => {
+    card.boardId = targetBoardId;
+    if (card.type !== 'board' || !doc.boards[card.targetId]) return;
+    doc.boards[card.targetId].parentId = targetBoardId;
+    // A board moved off Home stops being a project, so it leaves its sidebar folder.
+    if (targetBoardId !== doc.rootId) delete doc.boards[card.targetId].folderId;
+  };
   for (const el of els) {
     el.x = el.x - minX + 120;
     el.y = el.y - minY + baseY;
-    el.boardId = targetBoardId;
+    rehome(el);
     moved.add(el.id);
     if (el.type === 'column') {
-      for (const c of el.children) if (doc.elements[c]) doc.elements[c].boardId = targetBoardId;
+      for (const c of el.children) if (doc.elements[c]) rehome(doc.elements[c]);
     }
-    if (el.type === 'board') doc.boards[el.targetId].parentId = targetBoardId;
   }
   // Lines that now span two boards are removed; lines between moved cards come along.
   const wasMoved = (p: { elId?: string }) => {
@@ -259,10 +269,16 @@ export function hostname(url: string) {
   }
 }
 
+/** A typed or pasted address as a link, or '' when it isn't one that's safe to open. */
 export function normalizeUrl(raw: string) {
   const s = raw.trim();
   if (!s) return '';
-  return /^[a-z][a-z0-9+.-]*:/i.test(s) ? s : `https://${s}`;
+  if (/^(https?:|mailto:)/i.test(s)) return s;
+  // "localhost:5180" and "example.com:8080/x" are a host and port, not a scheme.
+  if (/^[\w.-]+:\d+(\/|$)/.test(s)) return `http://${s}`;
+  // Any other scheme (javascript:, data:, file:) could run code or read local files.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return '';
+  return `https://${s}`;
 }
 
 export function looksLikeUrl(s: string) {

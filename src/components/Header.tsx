@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Folder, Download, FolderCog, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Folder, Download, FolderCog, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import type { Doc } from '../types';
 import { browse, getState, mutate, openBoard, redo, undo, useStore } from '../store';
 import { parseWorkspace } from '../workspaceFiles';
@@ -46,7 +46,7 @@ function importJSON() {
   input.click();
 }
 
-export function Header({ onSearch }: { onSearch: () => void }) {
+export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShortcuts: () => void }) {
   const boardId = useStore((s) => s.ui.boardId);
   const boards = useStore((s) => s.doc.boards);
   const rootId = useStore((s) => s.doc.rootId);
@@ -154,6 +154,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
               )}
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
               <button onClick={() => { importJSON(); setMenu(false); }}><Upload size={14} /> Import workspace</button>
+              <button onClick={() => { onShortcuts(); setMenu(false); }}><Keyboard size={14} /> Keyboard shortcuts <kbd className="menu-kbd">?</kbd></button>
               <button onClick={() => { if (confirm('Reset to the demo workspace? You can undo this.')) replaceDoc(seedDoc()); setMenu(false); }}>
                 <RotateCcw size={14} /> Reset to demo
               </button>
@@ -161,7 +162,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
           )}
         </div>
         <button className="btn-primary" onClick={() => downloadJSON(getState().doc)} title="Export your workspace as a file">
-          <Download size={15} /> Export
+          <Download size={15} /> <span className="export-label">Export</span>
         </button>
       </div>
       {storageOpen && <StorageDialog onClose={() => setStorageOpen(false)} />}

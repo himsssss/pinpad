@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-react';
-import { retrySave, storageBlocked, switchStorage, usingDrive, useStore, type StorageTarget } from '../store';
+import { afterSignIn, switchStorage, usingDrive, useStore, type StorageTarget } from '../store';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
 import { googleAccount, googleConfigured, preloadGoogle, signIn, signOut } from '../googleAuth';
@@ -123,9 +123,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
   const signInAgain = () =>
     run(async () => {
       await signIn();
-      if (!storageBlocked()) return retrySave();
-      driveStorage.reset();
-      await switchStorage({ kind: 'drive' }, (await driveStorage.hasWorkspace()) ? 'open' : 'replace');
+      await afterSignIn();
     });
 
   const conflictPlace = conflict?.kind === 'drive' ? 'Your Google Drive' : 'That folder';

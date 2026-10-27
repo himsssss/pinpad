@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef } from 'react';
+import { sanitizeHtml } from '../sanitize';
+import { readImage } from '../images';
 
 interface Props {
   value: string;
@@ -24,7 +26,8 @@ export function Editable({ value, onChange, editing, rich, placeholder, classNam
     const node = ref.current;
     if (!node || document.activeElement === node) return;
     if (rich) {
-      if (node.innerHTML !== value) node.innerHTML = value;
+      const html = sanitizeHtml(value);
+      if (node.innerHTML !== html) node.innerHTML = html;
     } else if (node.innerText !== value) node.innerText = value;
   }, [value, rich]);
 
@@ -46,7 +49,25 @@ export function Editable({ value, onChange, editing, rich, placeholder, classNam
       }}
       onPaste={(e) => {
         e.preventDefault();
-        const text = e.clipboardData.getData('text/plain');
+        const data = e.clipboardData;
+        if (rich) {
+          // Notes keep pasted formatting (cleaned) and pasted images.
+          const images = [...data.files].filter((f) => f.type.startsWith('image/'));
+          if (images.length) {
+            const node = e.currentTarget;
+            Promise.all(images.map(readImage)).then((srcs) => {
+              node.focus();
+              document.execCommand('insertHTML', false, srcs.map((src) => `<img src="${src}" alt="">`).join(''));
+            });
+            return;
+          }
+          const html = data.getData('text/html');
+          if (html) {
+            document.execCommand('insertHTML', false, sanitizeHtml(html));
+            return;
+          }
+        }
+        const text = data.getData('text/plain');
         document.execCommand('insertText', false, onEnter ? text.replace(/\s*\n\s*/g, ' ') : text);
       }}
       onFocus={onFocus}

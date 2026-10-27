@@ -7,12 +7,15 @@ import { Sidebar } from './components/Sidebar';
 import { Canvas } from './components/Canvas';
 import { SearchDialog } from './components/SearchDialog';
 import { ProjectsPage } from './components/ProjectsPage';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
+import { CardMenu } from './components/CardMenu';
 
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
 
 export function App() {
   const [searching, setSearching] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const browsing = useStore((s) => s.ui.browsing);
   const boardTitle = useStore((s) =>
     s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
@@ -30,6 +33,11 @@ export function App() {
       const { ui, doc } = getState();
       const typing = isTypingTarget(e.target);
       // Board shortcuts don't apply on the Projects page.
+      if (e.key === '?' && !typing && !mod) {
+        e.preventDefault();
+        setShortcuts(true);
+        return;
+      }
       if (ui.browsing !== null && !(mod && ['\\', 'k', 'z', 'y'].includes(e.key.toLowerCase()))) return;
 
       if (mod && e.key === '\\') {
@@ -106,8 +114,10 @@ export function App() {
     };
     Object.assign(window, { __undo: history('undo'), __redo: history('redo') });
 
-    const onCopy = (e: ClipboardEvent) => !isTypingTarget(e.target) && copySelection(e);
-    const onPaste = (e: ClipboardEvent) => !isTypingTarget(e.target) && paste(e);
+    // Cards are only copied and pasted on a board, never into one hidden behind the Projects page.
+    const onBoard = (e: ClipboardEvent) => !isTypingTarget(e.target) && getState().ui.browsing === null;
+    const onCopy = (e: ClipboardEvent) => onBoard(e) && copySelection(e);
+    const onPaste = (e: ClipboardEvent) => onBoard(e) && paste(e);
     window.addEventListener('keydown', onKey);
     window.addEventListener('copy', onCopy);
     window.addEventListener('paste', onPaste);
@@ -122,10 +132,13 @@ export function App() {
     // The canvas fills the window; header, folders and tools float over it in rounded panels.
     <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
       {browsing === null ? <Canvas /> : <ProjectsPage folderId={browsing || null} />}
-      <Header onSearch={() => setSearching(true)} />
+      <Header onSearch={() => setSearching(true)} onShortcuts={() => setShortcuts(true)} />
+      {sidebarOpen && <div className="sidebar-backdrop" onPointerDown={() => setUI({ sidebarOpen: false })} />}
       <Sidebar />
       {browsing === null && <Toolbar />}
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
+      <CardMenu />
+      {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>
   );
 }

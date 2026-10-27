@@ -33,8 +33,9 @@ function goTo(r: Result) {
   const { doc } = getState();
   let el = doc.elements[r.elId];
   if (el.columnId) el = doc.elements[el.columnId] ?? el;
-  const canvas = document.querySelector('.canvas')?.getBoundingClientRect();
-  if (canvas) setView({ zoom: 1, x: canvas.width / 2 - el.x - el.w / 2, y: canvas.height / 3 - el.y });
+  // The canvas fills the window; it may not be on screen yet when coming from the Projects page.
+  const canvas = document.querySelector('.canvas')?.getBoundingClientRect() ?? { width: window.innerWidth, height: window.innerHeight };
+  setView({ zoom: 1, x: canvas.width / 2 - el.x - el.w / 2, y: canvas.height / 3 - el.y });
   select([r.elId]);
 }
 

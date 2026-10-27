@@ -78,11 +78,12 @@ export function Sidebar() {
       .sort((a, b) => a.order - b.order);
   const topFolders = childFolders(undefined);
   const byTitle = (a: Board, b: Board) => a.title.localeCompare(b.title);
-  const inFolder = (folderId: string) => Object.values(doc.boards).filter((b) => b.folderId === folderId).sort(byTitle);
+  const allProjects = projects(doc);
+  const inFolder = (folderId: string) => allProjects.filter((b) => b.folderId === folderId).sort(byTitle);
   /** Projects in a folder and all of its subfolders. */
   const totalIn = (folderId: string): number =>
     inFolder(folderId).length + childFolders(folderId).reduce((n, f) => n + totalIn(f.id), 0);
-  const unfiled = projects(doc).filter((b) => !b.folderId || !doc.folders[b.folderId]);
+  const unfiled = allProjects.filter((b) => !b.folderId || !doc.folders[b.folderId]);
 
   /** True if `folderId` is `ancestorId` or sits somewhere inside it. */
   const isWithin = (folderId: string | undefined, ancestorId: string) => {

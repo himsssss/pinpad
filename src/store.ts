@@ -5,7 +5,7 @@ import { load, save } from './persist';
 import { deleteElements, seedDoc } from './doc';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
-import { SignInNeeded } from './googleAuth';
+import { preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
 export interface State {
@@ -114,8 +114,8 @@ function removeIfEmpty(id: string) {
   setState({ ui: { ...state.ui, selection: state.ui.selection.filter((s) => s !== id) } });
 }
 
-/** Starts boards clear of the floating panels on the left and top. */
-export const DEFAULT_VIEW: View = { x: 300, y: 40, zoom: 1 };
+/** Starts boards clear of the floating panels on the left and top (on a phone, just the top bar). */
+export const DEFAULT_VIEW: View = window.matchMedia('(max-width: 640px)').matches ? { x: 16, y: 72, zoom: 0.8 } : { x: 300, y: 40, zoom: 1 };
 
 export function currentView(): View {
   return state.ui.views[state.ui.boardId] ?? DEFAULT_VIEW;
@@ -134,13 +134,17 @@ export function startEditing(id: string, point: { x: number; y: number } | null 
   setUI({ selection: [id], editingId: id, editPoint: point });
 }
 
+/** Phone-sized screens, where the sidebar covers the board and closes once something is picked. */
+export const isPhone = () => window.matchMedia('(max-width: 640px)').matches;
+const closeSidebarOnPhone = () => (isPhone() ? { sidebarOpen: false } : {});
+
 export function openBoard(boardId: string) {
-  setUI({ boardId, browsing: null, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null, playingId: null });
+  setUI({ boardId, browsing: null, selection: [], editingId: null, editPoint: null, dropTarget: null, draw: null, playingId: null, ...closeSidebarOnPhone() });
 }
 
 /** Shows the Projects page at a sidebar folder (null for all projects). */
 export function browse(folderId: string | null) {
-  setUI({ browsing: folderId ?? '', selection: [], editingId: null, editPoint: null, draw: null, playingId: null });
+  setUI({ browsing: folderId ?? '', selection: [], editingId: null, editPoint: null, draw: null, playingId: null, ...closeSidebarOnPhone() });
 }
 
 // ---- persistence ----
@@ -258,6 +262,16 @@ function writeFiles(doc: Doc) {
   return writing;
 }
 
+/**
+ * After Google sign-in is renewed: saves what's waiting, or, when the boards in Drive
+ * couldn't be read before, opens them (they're the saved copy).
+ */
+export async function afterSignIn() {
+  if (!fileBlocked) return retrySave();
+  driveStorage.reset();
+  await switchStorage({ kind: 'drive' }, (await driveStorage.hasWorkspace()) ? 'open' : 'replace');
+}
+
 /** Saves the current boards again after a failure (say, once Google sign-in is renewed). */
 export function retrySave() {
   return writeFiles(state.doc);
@@ -321,13 +335,13 @@ async function syncFromStorage() {
     if (sameFiles(found.disk, onDisk)) return;
     const { doc, disk } = found;
     onDisk = disk;
-    past = [];
-    future = [];
+    // Undo puts back what was here before the outside change (and saves that back there).
+    record(state.doc);
     pendingBase = null;
     const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
     const selection = state.ui.selection.filter((id) => doc.elements[id]);
     setState({ doc, ui: { ...state.ui, boardId, selection, dropTarget: null }, storageError: null });
-    await save('doc', doc);
+    await saveLocal(doc);
     // Writes back what following the change needs, like the index's new folder names.
     await writeFiles(doc);
   } catch (err) {
@@ -338,11 +352,27 @@ async function syncFromStorage() {
   }
 }
 
+const LOCAL_ERROR = "Couldn't save in this browser";
+
+/** Saves to this device; without a storage folder or Drive, a failure here means unsaved work, so it's shown. */
+async function saveLocal(doc: Doc) {
+  try {
+    await save('doc', doc);
+    if (state.storageError?.startsWith(LOCAL_ERROR)) setState({ storageError: null });
+  } catch (err) {
+    if (backend) return;
+    const full = err instanceof DOMException && err.name === 'QuotaExceededError';
+    setState({
+      storageError: `${LOCAL_ERROR} (${full ? 'its storage is full' : errorText(err)}). Use Export to keep a copy, or connect Google Drive in Storage location.`,
+    });
+  }
+}
+
 async function flush() {
   clearTimeout(persistTimer);
   persistTimer = undefined;
   const doc = state.doc;
-  await Promise.all([save('doc', doc), writeFiles(doc)]);
+  await Promise.all([saveLocal(doc), writeFiles(doc)]);
   if (persistTimer === undefined) setState({ saved: true });
 }
 
@@ -414,7 +444,7 @@ export async function switchStorage(target: StorageTarget, keep: 'open' | 'repla
     canRedo: false,
     storageError: null,
   });
-  await save('doc', doc);
+  await saveLocal(doc);
 }
 
 function schedulePersist() {
@@ -447,6 +477,20 @@ export async function initStore() {
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushPending() : syncFromStorage()));
   window.addEventListener('focus', () => syncFromStorage());
+  if (usingDrive() && !nativeStorage()) {
+    // The website's Google token lasts an hour and renewing it needs a click, so the next
+    // click after it runs low renews it, instead of saving stopping until "Sign in again".
+    preloadGoogle().catch(() => {});
+    window.addEventListener(
+      'pointerdown',
+      (e) => {
+        // Not from Storage location's own "Sign in again", which asks Google itself.
+        if (!usingDrive() || !webTokenExpiring() || (e.target as Element).closest?.('.dialog')) return;
+        renewWebToken().then((ok) => ok && afterSignIn().catch(() => {}));
+      },
+      true,
+    );
+  }
   window.setInterval(() => document.visibilityState === 'visible' && syncFromStorage(), 30_000);
   if (!doc?.boards?.[doc.rootId]) doc = seedDoc();
   // Workspaces saved before folders existed.
@@ -457,7 +501,7 @@ export async function initStore() {
     ui: {
       boardId,
       playingId: null,
-      sidebarOpen: savedUI?.sidebarOpen ?? true,
+      sidebarOpen: !isPhone() && (savedUI?.sidebarOpen ?? true),
       collapsedSections: savedUI?.collapsedSections ?? [],
       draw: null,
       selection: [],
@@ -472,6 +516,6 @@ export async function initStore() {
     saved: true,
     storageError,
   };
-  save('doc', doc);
+  saveLocal(doc);
   writeFiles(doc);
 }
