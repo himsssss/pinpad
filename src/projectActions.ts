@@ -5,7 +5,7 @@
 
 import { getState, mutate, openBoard, setUI } from './store';
 import { current, isDraft } from 'immer';
-import { cloneElements, createElement, deleteElements, maxZ, uid } from './doc';
+import { cloneElements, createElement, deleteElements, maxZ, needsProject, uid } from './doc';
 import type { Board, Doc, El, Renaming, SavedTemplate, TrashEntry } from './types';
 import { viewportCenter } from './interactions';
 
@@ -123,7 +123,7 @@ function copyTemplate(d: Doc, template: SavedTemplate, targetId: string, dx: num
 export function addTemplateToBoard(templateId: string) {
   const { doc, ui } = getState();
   const template = doc.templates?.find((t) => t.id === templateId);
-  if (!template) return;
+  if (!template || needsProject(doc, ui.boardId)) return;
   const free = template.elements.filter((e) => e.boardId === template.rootId && !e.columnId && e.type !== 'line');
   const c = viewportCenter();
   const dx = free.length ? Math.round(c.x - (Math.min(...free.map((e) => e.x)) + Math.max(...free.map((e) => e.x + e.w))) / 2) : 0;

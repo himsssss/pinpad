@@ -18,6 +18,7 @@ import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
 import { ContextMenu } from './components/ContextMenu';
 import { addElementAtCenter } from './actions';
+import { needsProject } from './doc';
 
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
@@ -41,6 +42,7 @@ export function App() {
     s.ui.browsing === TRASH ? 'Trash' : s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? s.storageName ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
   );
   const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
+  const blocked = useStore((s) => needsProject(s.doc, s.ui.boardId));
 
   // The macOS app shows this as its window title.
   useEffect(() => {
@@ -185,7 +187,7 @@ export function App() {
       <Header onSearch={() => setSearching(true)} onShortcuts={() => setShortcuts(true)} />
       {sidebarOpen && <div className="sidebar-backdrop" onPointerDown={() => setUI({ sidebarOpen: false })} />}
       <Sidebar />
-      {browsing === null && <Toolbar />}
+      {browsing === null && !blocked && <Toolbar />}
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
       <CardMenu />
       <ContextMenu />

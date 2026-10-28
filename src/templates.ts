@@ -5,7 +5,7 @@
 
 import { LayoutGrid, Lightbulb, Palette, CalendarDays, Clapperboard, type LucideIcon } from 'lucide-react';
 import type { El } from './types';
-import { LINE_COLORS, maxZ, uid } from './doc';
+import { LINE_COLORS, maxZ, needsProject, uid } from './doc';
 import { getState, mutate, select } from './store';
 import { viewportCenter } from './interactions';
 
@@ -130,6 +130,7 @@ export const TEMPLATES: Template[] = [
 /** Adds a template's cards to the current board, centered on screen, as one undo step. */
 export function applyTemplate(t: Template) {
   const { doc, ui } = getState();
+  if (needsProject(doc, ui.boardId)) return;
   const els = t.build(ui.boardId);
   const free = els.filter((e) => !e.columnId && e.type !== 'line');
   const minX = Math.min(...free.map((e) => e.x));

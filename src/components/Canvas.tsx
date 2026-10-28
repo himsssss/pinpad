@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Minus, Plus, Maximize } from 'lucide-react';
+import { FolderPlus, Minus, Plus, Maximize } from 'lucide-react';
 import type { ElType } from '../types';
-import { DEFAULT_VIEW, checkpoint, currentView, getState, select, setView, useStore } from '../store';
+import { DEFAULT_VIEW, checkpoint, currentView, getState, select, setUI, setView, useStore } from '../store';
 import { registerCanvas, screenToWorld, trackPointer } from '../interactions';
 import { addElement, addFiles } from '../actions';
 import { addStroke, eraseAt, strokePath } from '../drawing';
+import { needsProject } from '../doc';
+import { createFolder, newProject } from '../projectActions';
 import { CardFrame } from './CardFrame';
 import { TemplateChips } from './TemplateChips';
 import { LinesLayer } from './LinesLayer';
@@ -17,6 +19,7 @@ export function Canvas() {
   const boardId = useStore((s) => s.ui.boardId);
   const view = useStore((s) => s.ui.views[s.ui.boardId] ?? DEFAULT_VIEW);
   const elements = useStore((s) => s.doc.elements);
+  const blocked = useStore((s) => needsProject(s.doc, s.ui.boardId));
   const ref = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
@@ -176,7 +179,7 @@ export function Canvas() {
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .line-handle, .zoom-controls, .templates')) return;
+    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .line-handle, .zoom-controls, .templates, .start-project')) return;
     (document.activeElement as HTMLElement | null)?.blur?.();
     window.getSelection()?.removeAllRanges();
     const startX = e.clientX;
@@ -212,7 +215,7 @@ export function Canvas() {
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .zoom-controls, .templates')) return;
+    if ((e.target as HTMLElement).closest('[data-el-id], .line-hit, .zoom-controls, .templates, .start-project')) return;
     // A double tap is handled as touch already; some browsers also report it as a double-click.
     if (Date.now() - touch.current.at < 800) return;
     const p = screenToWorld(e.clientX, e.clientY);
@@ -315,7 +318,17 @@ export function Canvas() {
         </>
       )}
       {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
-      {isEmpty && (
+      {blocked ? (
+        // Cards go in projects: until there's one (or a folder), Home asks for it.
+        <div className={`start-project ${isEmpty ? '' : 'docked'}`}>
+          {isEmpty && <p>Start with a project</p>}
+          <span>{isEmpty ? 'Projects hold your cards. Make one, or a folder to group them.' : 'Make a project to add cards.'}</span>
+          <div className="start-project-actions">
+            <button className="btn-primary" onClick={() => newProject()}><Plus size={15} /> New project</button>
+            <button className="btn-secondary" onClick={() => (setUI({ sidebarOpen: true }), createFolder())}><FolderPlus size={15} /> New folder</button>
+          </div>
+        </div>
+      ) : isEmpty && (
         <div className="empty-hint">
           <p>This board is empty</p>
           <span>Drag something from the toolbar, or double-click to add a note</span>

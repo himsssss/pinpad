@@ -1,16 +1,21 @@
 import type { El, ElType, FileEl, ImageEl } from './types';
 import { getState, mutate, select, startEditing } from './store';
-import { DEFAULT_WIDTH, cloneElements, createElement, deleteElements, hostname, maxZ, normalizeUrl } from './doc';
+import { DEFAULT_WIDTH, cloneElements, createElement, deleteElements, hostname, maxZ, needsProject, normalizeUrl } from './doc';
 import { viewportCenter, worldRect } from './interactions';
 import { readImage } from './images';
 import { addAttachment } from './attachments';
 import { importShareFile } from './shareFile';
 import { tell } from './components/ConfirmDialog';
 
+/** No cards on Home until there's a project or a folder (Home asks for one instead). */
+export const addingBlocked = () => needsProject(getState().doc, getState().ui.boardId);
+
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Adds a card at a world position and, for text cards, starts editing it. */
 export function addElement(type: ElType, x: number, y: number, content?: string) {
+  // A board card on Home is a new project, so that one is allowed.
+  if (type !== 'board' && addingBlocked()) return;
   const { doc, ui } = getState();
   const { el, board } = createElement(type, ui.boardId, Math.round(x), Math.round(y), maxZ(doc) + 1);
   if (content && el.type === 'note') el.html = content.split('\n').map((l) => `<div>${escapeHtml(l) || '<br>'}</div>`).join('');
@@ -65,6 +70,7 @@ export function addElementAtCenter(type: ElType, content?: string) {
 }
 
 export function addImages(srcs: string[], at = viewportCenter()) {
+  if (addingBlocked()) return;
   const { ui } = getState();
   let z = maxZ(getState().doc);
   const ids: string[] = [];
@@ -90,7 +96,7 @@ export async function addFiles(files: File[], at = viewportCenter()) {
     await importShareFile(await f.text()).catch((err) => tell(`Couldn't import “${f.name}”`, err.message));
   }
   files = files.filter((f) => !sent.includes(f));
-  if (!files.length) return;
+  if (!files.length || addingBlocked()) return;
   // Only pictures every browser can show become image cards (not Photoshop or HEIC files).
   const images = files.filter((f) => /^image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml)$/.test(f.type));
   const others = files.filter((f) => !images.includes(f));
@@ -149,6 +155,7 @@ export function deleteSelection() {
 
 /** Copies cards (with their contents) into the current board, offset from the originals. */
 function cloneIntoBoard(ids: string[], dx: number, dy: number) {
+  if (addingBlocked()) return;
   const { doc, ui } = getState();
   // Cards inside a column have no position of their own; place copies by where they appear.
   const positions = new Map(ids.filter((id) => doc.elements[id]?.columnId).map((id) => [id, worldRect(id)]));

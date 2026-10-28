@@ -260,6 +260,11 @@ export function projects(doc: Doc) {
     .map((e) => doc.boards[e.targetId]);
 }
 
+/** Home before there's a project or a folder: cards go in projects, so none are added there yet. */
+export function needsProject(doc: Doc, boardId: string) {
+  return boardId === doc.rootId && Object.keys(doc.folders).length === 0 && projects(doc).length === 0;
+}
+
 export function countCards(doc: Doc, boardId: string) {
   return boardElements(doc, boardId).filter((e) => e.type !== 'line').length;
 }
