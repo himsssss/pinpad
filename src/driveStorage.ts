@@ -302,6 +302,31 @@ export const driveStorage = {
     return hit ? (await drive(`${API}/${hit[1]}?alt=media`)).blob() : null;
   },
 
+  /** A folder's Drive id, by its path in the workspace; null when it isn't in Drive (yet). */
+  async folderId(path: string) {
+    await ready();
+    return lookup(path)?.[1] ?? null;
+  },
+
+  /** Whether anyone with the link can view a Drive file or folder. */
+  async linkShared(id: string) {
+    const res = await drive(`${API}/${id}/permissions?fields=permissions(id,type,role)`);
+    const { permissions = [] } = (await res.json()) as { permissions?: { type: string }[] };
+    return permissions.some((p) => p.type === 'anyone');
+  },
+
+  /**
+   * Lets anyone with the link view a folder (and everything in it), or stops it. The link
+   * doesn't make the folder searchable.
+   */
+  async setLinkShared(id: string, on: boolean) {
+    if (on) {
+      await drive(`${API}/${id}/permissions?fields=id`, { method: 'POST', ...json({ type: 'anyone', role: 'reader', allowFileDiscovery: false }) });
+    } else {
+      await drive(`${API}/${id}/permissions/anyoneWithLink`, { method: 'DELETE' });
+    }
+  },
+
   /** Lists Drive afresh, so files renamed, moved or deleted there since are seen. */
   async list(): Promise<Listed[]> {
     driveStorage.reset();

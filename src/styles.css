@@ -1131,3 +1131,33 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .signin-note { margin: 4px 10px 10px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
 .menu .signin-option { justify-content: center; gap: 10px; margin-top: 6px; padding: 10px; border: 1px solid var(--hairline-strong, #d9d8e6); font-weight: 600; text-align: center; }
 .signin-sub { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--stone); }
+
+/* viewing a shared link (read-only) */
+.view-banner { position: fixed; left: 50%; top: calc(var(--gap) + 56px); transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--ink); color: #fff; font-size: 13.5px; box-shadow: 0 8px 24px rgba(5, 0, 56, .25); }
+.view-banner-icon { flex: none; color: #9fe870; }
+.view-banner-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.view-banner-error { color: #ffb4b4; }
+.view-banner-copy, .view-banner-own { flex: none; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px; font-weight: 600; font-size: 13px; }
+.view-banner-copy { background: #9fe870; color: #163300; }
+.view-banner-own { color: rgba(255, 255, 255, .85); text-decoration: none; }
+.view-banner-own:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+.view-only .sidebar-heading > button, .view-only .templates, .view-only .account-btn, .view-only .signin-btn,
+.view-only .place-switcher .logo-chevron, .view-only .projects-actions, .view-only .trash-row, .view-only .resize-grip,
+.view-only .quick-line, .view-only .topbar-right .icon-btn[aria-label='Undo'], .view-only .topbar-right .icon-btn[aria-label='Redo'] { display: none !important; }
+
+/* share dialog */
+.share-dialog { width: min(480px, calc(100vw - 32px)); }
+.share-row { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-md); background: var(--surface); }
+.share-icon { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--panel); color: var(--ink); }
+.share-text { flex: 1; min-width: 0; }
+.share-title { font-weight: 600; font-size: 14px; color: var(--ink); }
+.share-detail { font-size: 12.5px; color: var(--slate); line-height: 1.4; }
+.switch { flex: none; position: relative; width: 40px; height: 24px; border-radius: 99px; background: #cfcde0; transition: background .15s; }
+.switch span { position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .2); transition: transform .15s; }
+.switch.on { background: #17a34a; }
+.switch.on span { transform: translateX(16px); }
+.switch:disabled { opacity: .6; }
+.share-link { display: flex; gap: 8px; margin-top: 12px; }
+.share-link input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--r-md); font-size: 13px; color: var(--slate); background: var(--panel); }
+.share-link .btn-primary { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.share-note { display: flex; align-items: center; gap: 6px; margin: 12px 0 0; font-size: 12px; color: var(--stone); }

@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import { produce, type Draft } from 'immer';
-import type { Doc, UI, View } from './types';
+import type { Doc, SavedTemplate, UI, View } from './types';
 import { load, save } from './persist';
 import { blankDoc, deleteElements, seedDoc } from './doc';
-import { purgeOldTrash } from './projectActions';
+import { importCopies, purgeOldTrash } from './projectActions';
+import { keepCopy, loadShared, PENDING_COPY_KEY, sharedFolderInUrl, type Shared } from './sharedView';
 import { cacheAll, moveAttachment, settlePending, storeAttachment, trashAttachment, uploadsPending } from './attachments';
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
@@ -25,6 +26,8 @@ export interface State {
   storageName: string | null;
   /** How far the save under way has got (0–1), when the storage reports it; null otherwise. */
   saveProgress: number | null;
+  /** A shared link being viewed (read-only), instead of this device's own boards. */
+  viewing: { name: string; folderId: string; error?: string } | null;
 }
 
 let state: State;
@@ -58,6 +61,7 @@ function setState(next: Partial<State>) {
  *   text edit undoes as one step.
  */
 export function mutate(recipe: (d: Draft<Doc>) => void, history: 'push' | 'pending' | 'none' = 'push') {
+  if (viewOnly) return;
   let next = produce(state.doc, recipe);
   if (next === state.doc) return;
   next = stampEdited(state.doc, next);
@@ -160,6 +164,7 @@ export function select(ids: string[]) {
 }
 
 export function startEditing(id: string, point: { x: number; y: number } | null = null) {
+  if (viewOnly) return;
   checkpoint();
   setUI({ selection: [id], editingId: id, editPoint: point });
 }
@@ -190,6 +195,8 @@ const UI_KEY = 'milanote-clone:ui';
 let persistTimer: number | undefined;
 
 function saveUI() {
+  // A shared link's boards aren't this device's: its own last board stays remembered.
+  if (viewOnly) return;
   try {
     const { boardId, views, sidebarOpen, collapsedSections, projectsView, projectsSort } = state.ui;
     localStorage.setItem(UI_KEY, JSON.stringify({ boardId, views, sidebarOpen, collapsedSections, projectsView, projectsSort }));
@@ -691,11 +698,71 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
 }
 
 function schedulePersist() {
+  if (viewOnly) return;
   clearTimeout(persistTimer);
   persistTimer = window.setTimeout(flush, 300);
 }
 
+/** Set while a shared link is open: nothing is edited or saved. */
+let viewOnly = false;
+let shared: Shared | null = null;
+
+/** Where a shared link keeps an attached file (by its card's ref), while one is open. */
+export const sharedFileId = (ref: string) => (viewOnly ? (shared?.files.get(ref) ?? null) : undefined);
+
+/** Opens a shared link read-only; it's read again every 30 seconds to show the owner's changes. */
+async function initSharedView(folderId: string) {
+  viewOnly = true;
+  let error: string | undefined;
+  try {
+    shared = await loadShared(folderId);
+  } catch (err) {
+    error = errorText(err);
+  }
+  const doc = shared?.doc ?? blankDoc();
+  state = {
+    doc,
+    ui: {
+      boardId: doc.rootId, playingId: null, sidebarOpen: !isPhone(), collapsedSections: [], projectsView: 'grid',
+      projectsSort: { by: 'name', desc: false }, draw: null, selection: [], editingId: null, editPoint: null, views: {},
+      dropTarget: null, guides: null, renaming: null, browsing: '',
+    },
+    canUndo: false, canRedo: false, saved: true, storageError: null, storageName: shared?.name ?? null, saveProgress: null,
+    viewing: { name: shared?.name ?? 'Shared boards', folderId, error },
+  };
+  const refresh = async () => {
+    if (document.visibilityState !== 'visible' || !shared) return;
+    const next = await loadShared(folderId).catch(() => null);
+    if (!next || next.version === shared.version) return;
+    shared = next;
+    const boardId = next.doc.boards[state.ui.boardId] ? state.ui.boardId : next.doc.rootId;
+    const selection = state.ui.selection.filter((id) => next.doc.elements[id]);
+    setState({ doc: next.doc, ui: { ...state.ui, boardId, selection } });
+  };
+  window.setInterval(refresh, 30_000);
+  window.addEventListener('focus', refresh);
+}
+
+/** "Save a copy" on a shared link: keeps it for this device's own boards and opens them. */
+export async function saveSharedCopy() {
+  if (!shared) return;
+  await keepCopy(shared);
+  location.href = location.href.split('#')[0];
+}
+
+/** Adds a copy saved from a shared link, once this device's own boards are open. */
+async function importPendingCopy() {
+  const pending = await load<{ folder: string | null; projects: SavedTemplate[] } | null>(PENDING_COPY_KEY).catch(() => null);
+  if (!pending?.projects?.length) return;
+  await save(PENDING_COPY_KEY, null);
+  const first = importCopies(pending.projects, pending.folder);
+  if (pending.folder) browse(Object.values(state.doc.folders).find((f) => f.name === pending.folder)?.id ?? null);
+  else if (first) openBoard(first);
+}
+
 export async function initStore() {
+  const sharedFolder = sharedFolderInUrl();
+  if (sharedFolder) return initSharedView(sharedFolder);
   // This place's own copy; before copies were kept per account, there was one shared copy.
   const own = await load<Doc>(docKey()).catch(() => undefined);
   let doc = own ?? (await load<Doc>('doc').catch(() => undefined));
@@ -786,8 +853,10 @@ export async function initStore() {
     storageError,
     storageName: null,
     saveProgress: null,
+    viewing: null,
   };
   if (fileBlocked) blockedDoc = doc;
+  importPendingCopy().catch(() => {});
   refreshStorageName().catch(() => {});
   saveLocal(doc);
   if (quick && backend) {

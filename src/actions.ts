@@ -83,6 +83,7 @@ export function addImages(srcs: string[], at = viewportCenter()) {
  * audio, documents…) as file cards with a preview.
  */
 export async function addFiles(files: File[], at = viewportCenter()) {
+  if (getState().viewing) return;
   // Only pictures every browser can show become image cards (not Photoshop or HEIC files).
   const images = files.filter((f) => /^image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml)$/.test(f.type));
   const others = files.filter((f) => !images.includes(f));

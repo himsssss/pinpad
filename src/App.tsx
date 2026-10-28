@@ -10,6 +10,8 @@ import { ProjectsPage } from './components/ProjectsPage';
 import { TRASH, TrashPage } from './components/TrashPage';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ShareDialog } from './components/ShareDialog';
+import { ViewBanner } from './components/ViewBanner';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
 import { ContextMenu } from './components/ContextMenu';
@@ -26,6 +28,7 @@ export function App() {
     s.ui.browsing === TRASH ? 'Trash' : s.ui.browsing !== null ? s.doc.folders[s.ui.browsing]?.name ?? s.storageName ?? 'Projects' : s.ui.boardId === s.doc.rootId ? '' : s.doc.boards[s.ui.boardId]?.title,
   );
   const sidebarOpen = useStore((s) => s.ui.sidebarOpen);
+  const viewing = useStore((s) => !!s.viewing);
 
   // The macOS app shows this as its window title.
   useEffect(() => {
@@ -145,16 +148,18 @@ export function App() {
 
   return (
     // The canvas fills the window; header, folders and tools float over it in rounded panels.
-    <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
+    <div className={`app ${sidebarOpen ? 'with-sidebar' : ''} ${viewing ? 'view-only' : ''}`}>
       {browsing === null ? <Canvas /> : browsing === TRASH ? <TrashPage /> : <ProjectsPage folderId={browsing || null} />}
       <Header onSearch={() => setSearching(true)} onShortcuts={() => setShortcuts(true)} />
       {sidebarOpen && <div className="sidebar-backdrop" onPointerDown={() => setUI({ sidebarOpen: false })} />}
       <Sidebar />
-      {browsing === null && <Toolbar />}
+      {browsing === null && !viewing && <Toolbar />}
+      <ViewBanner />
       {searching && <SearchDialog onClose={() => setSearching(false)} />}
       <CardMenu />
       <ContextMenu />
       <ConfirmDialog />
+      <ShareDialog />
       <UpdatePrompt />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>

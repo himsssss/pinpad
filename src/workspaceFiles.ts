@@ -69,6 +69,8 @@ export interface Layout {
   paths: Map<string, string>;
   /** Attached file (FileEl.ref) to its relative path. */
   attachments: Map<string, string>;
+  /** Sidebar folder or project id to its directory (from layoutWorkspace only). */
+  dirs?: Map<string, string>;
 }
 
 /**
@@ -207,7 +209,7 @@ export function layoutWorkspace(doc: Doc): Layout {
   const index: Index = { pinpad: FORMAT, rootId: doc.rootId, folders: doc.folders, boards: Object.fromEntries(paths) };
   if (attachments.size) index.files = Object.fromEntries(attachments);
   files.set(INDEX_FILE, JSON.stringify(index, null, 2));
-  return { files, paths, attachments };
+  return { files, paths, attachments, dirs: new Map([...folderDirs, ...projectDirs]) };
 }
 
 /**
