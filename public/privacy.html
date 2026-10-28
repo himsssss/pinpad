@@ -19,11 +19,12 @@
   <body>
     <main>
       <h1>Pinpad Privacy Policy</h1>
-      <p class="updated">Last updated 27 October 2026</p>
+      <p class="updated">Last updated 29 October 2026</p>
 
       <p>
         Pinpad is a board app for notes, links, images and to-dos, available as a website and as apps for macOS and
-        Windows. Pinpad has no server and no user accounts. We don't collect, store, sell or share your information.
+        Windows. Pinpad keeps as little about you as it can: your boards stay wherever you save them, and we never
+        sell your information, use it for advertising, or share it beyond the services named below.
       </p>
 
       <h2>Where your boards are saved</h2>
@@ -55,17 +56,56 @@
         it, doesn't let people read it, and doesn't use it to train AI models.
       </p>
 
+      <h2>Your Pinpad account</h2>
+      <p>
+        You sign in to Pinpad with an email address and a password. Accounts are run on Google's Firebase:
+        Firebase Authentication keeps your email address and a protected (hashed) form of your password, and sends
+        the emails that confirm your address or reset your password. Your account doesn't hold your boards. It only
+        remembers which Google Drive your boards are in (that Google account's email address) and when that was last
+        updated, so signing in on another computer can find them. This is kept in Google Cloud Firestore, in India
+        (Mumbai), and only you can read it while you're signed in.
+      </p>
+      <p>
+        Your sign-in stays on your device (in the browser's storage on the website, or in the app's storage) until
+        you sign out. To delete your account and what it remembers, email the address at the bottom of this page.
+      </p>
+
       <h2>Links and embedded media</h2>
       <p>
-        When you add a link, Pinpad may ask that site (for example YouTube, Vimeo, Spotify or SoundCloud) for the
-        link's title and thumbnail, and videos or audio you add play from the site that hosts them. Those sites
-        handle that request under their own privacy policies.
+        When you add a link, Pinpad reads the start of that page to show its title, picture and description. In the
+        Mac and Windows apps, your computer reads the page itself. On the website, browsers can't read other sites'
+        pages, so the link is sent to Pinpad's link reader (hosted with the website on Vercel). It fetches the page,
+        sends the start of it back to you and keeps nothing. To save repeating the work, Vercel can reuse the answer
+        for the same link for up to a day.
+      </p>
+      <p>
+        Videos and audio you add (for example from YouTube, Vimeo, Spotify or SoundCloud) play from the site that
+        hosts them. That site, and any site whose page is read for a link, handles the request under its own privacy
+        policy.
+      </p>
+
+      <h2>Error reports</h2>
+      <p>
+        When something goes wrong in Pinpad, it sends an error report to
+        <a href="https://sentry.io/privacy/">Sentry</a> so the problem can be found and fixed. A report contains the
+        error message, where in Pinpad's code it happened, your browser or app version and operating system, the
+        address of the Pinpad page and of the requests it made just before the error (without anything after a
+        <code>?</code>). It doesn't include your boards, what you typed or clicked, your name or email address,
+        your account's id, cookies, or sign-in tokens. Sentry uses the internet (IP) address a report comes from to note
+        the country, and doesn't keep the address itself.
+      </p>
+
+      <h2>Hosting</h2>
+      <p>
+        The website is hosted on <a href="https://vercel.com/legal/privacy-policy">Vercel</a>, which keeps routine
+        request logs (such as IP addresses and the pages requested) for a short time to run and protect the site.
       </p>
 
       <h2>Deleting your data</h2>
       <p>
         Delete boards in Pinpad, or delete the files directly: clear the site's data in your browser, delete the
-        storage folder on your computer, or delete the Pinpad folder in Google Drive.
+        storage folder on your computer, or delete the Pinpad folder in Google Drive. To delete your Pinpad account,
+        email us and we'll remove it and what it remembers.
       </p>
 
       <h2>Changes and contact</h2>
