@@ -484,7 +484,7 @@ struct OAuthProvider: Sendable {
 
 /// Sign-in for saving boards to Google Drive or OneDrive, using the providers' flow for
 /// installed apps: the default browser opens the consent page, which redirects back to a
-/// one-off loopback address with a code (PKCE). The refresh token is kept in the Keychain so
+/// one-off loopback address with a code (PKCE). The refresh token is kept in a private file so
 /// later launches get access tokens without asking again. Exposed as
 /// `window.pinpadNative.google` and `.microsoft`; mirrors oauth() in desktop/main.cjs.
 @MainActor
@@ -739,32 +739,83 @@ final class OAuthBridge: NSObject, WKScriptMessageHandlerWithReply {
     return base64url(Data(bytes))
   }
 
-  /// One Keychain item per account ("refresh-token" alone is the older single Google sign-in).
-  nonisolated private static func keychainItem(_ provider: OAuthProvider, account: String?) -> [String: Any] {
-    [
-      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: provider.keychainService,
-      kSecAttrAccount as String: account.map { "refresh-token:\($0)" } ?? "refresh-token",
-    ]
+  /// Sign-ins are kept in a file only this Mac user can read (Application Support/<bundle id>/sign-ins.json),
+  /// not the Keychain: the app is signed ad hoc, so every new build looked like a new app to the
+  /// Keychain, which asked for the Mac's password again. Keyed by service, then by account
+  /// ("refresh-token" alone is the older single Google sign-in).
+  nonisolated private static let signInsLock = NSLock()
+
+  nonisolated private static var signInsFile: URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent(Bundle.main.bundleIdentifier ?? "local.milanote-clone", isDirectory: true)
+      .appendingPathComponent("sign-ins.json")
+  }
+
+  nonisolated private static func itemKey(_ account: String?) -> String {
+    account.map { "refresh-token:\($0)" } ?? "refresh-token"
+  }
+
+  nonisolated private static func readSignIns() -> [String: [String: String]] {
+    guard let data = try? Data(contentsOf: signInsFile) else { return [:] }
+    return (try? JSONDecoder().decode([String: [String: String]].self, from: data)) ?? [:]
+  }
+
+  nonisolated private static func writeSignIns(_ signIns: [String: [String: String]]) {
+    let file = signInsFile
+    let folder = file.deletingLastPathComponent()
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    guard let data = try? JSONEncoder().encode(signIns) else { return }
+    // Written whole, then readable and writable by this user only.
+    try? data.write(to: file, options: [.atomic])
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
   }
 
   nonisolated private static func saveRefreshToken(_ provider: OAuthProvider, _ token: String, account: String?) {
-    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
-    var item = keychainItem(provider, account: account)
-    item[kSecValueData as String] = Data(token.utf8)
-    SecItemAdd(item as CFDictionary, nil)
+    signInsLock.lock()
+    defer { signInsLock.unlock() }
+    var signIns = readSignIns()
+    signIns[provider.keychainService, default: [:]][itemKey(account)] = token
+    writeSignIns(signIns)
   }
 
   nonisolated private static func loadRefreshToken(_ provider: OAuthProvider, account: String?) -> String? {
+    signInsLock.lock()
+    defer { signInsLock.unlock() }
+    if let token = readSignIns()[provider.keychainService]?[itemKey(account)] { return token }
+    // Signed in before sign-ins left the Keychain: moved to the file once (the Keychain may ask
+    // for the password this last time), then removed from the Keychain.
+    guard let token = keychainToken(provider, account: account) else { return nil }
+    var signIns = readSignIns()
+    signIns[provider.keychainService, default: [:]][itemKey(account)] = token
+    writeSignIns(signIns)
+    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
+    return token
+  }
+
+  nonisolated private static func deleteRefreshToken(_ provider: OAuthProvider, account: String?) {
+    signInsLock.lock()
+    defer { signInsLock.unlock() }
+    var signIns = readSignIns()
+    if signIns[provider.keychainService]?.removeValue(forKey: itemKey(account)) != nil { writeSignIns(signIns) }
+    // One never moved out of the Keychain goes too.
+    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
+  }
+
+  // The Keychain items sign-ins used to be kept in.
+  nonisolated private static func keychainItem(_ provider: OAuthProvider, account: String?) -> [String: Any] {
+    [
+      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: provider.keychainService,
+      kSecAttrAccount as String: itemKey(account),
+    ]
+  }
+
+  nonisolated private static func keychainToken(_ provider: OAuthProvider, account: String?) -> String? {
     var query = keychainItem(provider, account: account)
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var result: CFTypeRef?
     guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
     return String(data: data, encoding: .utf8)
-  }
-
-  nonisolated private static func deleteRefreshToken(_ provider: OAuthProvider, account: String?) {
-    SecItemDelete(keychainItem(provider, account: account) as CFDictionary)
   }
 }
 
