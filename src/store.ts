@@ -683,10 +683,16 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     await writeFiles(state.doc);
     return;
   }
-  // Opened here before: its copy on this device shows at once, and the storage is read just
-  // after (finishStart), as when Pinpad starts.
-  if (cloud || target.kind === 'webfolder') {
-    const own = await load<Doc>(docKey()).catch(() => undefined);
+  // The storage is read first, so folders deleted since this device's copy was saved never
+  // show (unchanged files come from the cache, so it's quick).
+  let found: Awaited<ReturnType<typeof readFiles>>;
+  try {
+    found = await readFiles(backend);
+    if (!found) throw new Error(cloud ? `No Pinpad workspace in ${placeName()}` : 'No Pinpad workspace in that folder');
+  } catch (err) {
+    // Unreachable (offline, say) but opened here before: its copy on this device opens, and
+    // the storage is read again (finishStart), as when Pinpad starts.
+    const own = cloud || target.kind === 'webfolder' ? await load<Doc>(docKey()).catch(() => undefined) : undefined;
     if (own?.boards?.[own.rootId]) {
       onDisk = nothingOnDisk();
       showDoc(own);
@@ -694,12 +700,6 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
       startup = finishStart(backend);
       return;
     }
-  }
-  let found: Awaited<ReturnType<typeof readFiles>>;
-  try {
-    found = await readFiles(backend);
-    if (!found) throw new Error(cloud ? `No Pinpad workspace in ${placeName()}` : 'No Pinpad workspace in that folder');
-  } catch (err) {
     if (previous && native) await native.use(previous.isDefault ? null : previous.folder);
     setMode(wasMode);
     setCurrentWebFolder(wasFolder);
@@ -708,17 +708,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   }
   const { doc, disk } = found;
   onDisk = disk;
-  past = [];
-  future = [];
-  pendingBase = null;
-  const boardId = doc.boards[state.ui.boardId] ? state.ui.boardId : doc.rootId;
-  setState({
-    doc,
-    ui: { ...state.ui, boardId, selection: [], editingId: null, playingId: null, dropTarget: null },
-    canUndo: false,
-    canRedo: false,
-    storageError: null,
-  });
+  showDoc(doc);
   await saveLocal(doc);
 }
 
