@@ -38,9 +38,12 @@ export class FolderAccessNeeded extends SignInNeeded {
 /**
  * Whether this browser can keep boards in a folder (Chrome and Edge). Where it can, the
  * website offers a folder instead of "This browser"; Safari and Firefox keep "This browser".
+ * Browsers built into apps (like the Claude app's) have the picker but never show it: it
+ * gives up after a while as if cancelled, so they keep "This browser" too.
  */
 export const webFoldersSupported = () =>
   !window.pinpadNative &&
+  !/\bClaude\//.test(navigator.userAgent) &&
   typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function';
 
 /** The folder in use, kept by id and name so its name is known without waiting. */
