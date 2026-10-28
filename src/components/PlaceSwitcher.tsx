@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Folder, FolderCog, FolderPlus, LogOut, Monitor, Plus, X } from 'lucide-react';
-import { browse, useStore } from '../store';
+import { AlertTriangle, Check, ChevronDown, Folder, FolderCog, FolderPlus, LogOut, Monitor, Plus, X } from 'lucide-react';
+import { afterSignIn, browse, cloudInUse, useStore } from '../store';
 import { nativeStorage } from '../native';
-import { googleAllowedHere, googleConfigured } from '../googleAuth';
-import { microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
-import { addFolder, addGoogleDrive, addOneDrive, addWebFolder, describePlace, listPlaces, openPlace, removePlace, type NewPlaceChoice, type Place } from '../places';
+import { googleAccount, googleAllowedHere, googleConfigured } from '../googleAuth';
+import { microsoftAccount, microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
+import { addFolder, addGoogleDrive, addOneDrive, addWebFolder, describePlace, listPlaces, openPlace, removePlace, signInAgain, type NewPlaceChoice, type Place } from '../places';
 import { askChoice, askConfirm } from './ConfirmDialog';
 import { DriveIcon } from './DriveIcon';
 import { OneDriveIcon } from './OneDriveIcon';
@@ -39,6 +39,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
   const [error, setError] = useState<string | null>(null);
   const saved = useStore((s) => s.saved);
   const storageError = useStore((s) => s.storageError);
+  const signInNeeded = useStore((s) => s.signInNeeded);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   // Rendered on the page itself, placed against the window: inside the sidebar it would be
@@ -104,6 +105,14 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
     });
   };
 
+  // The Drive or OneDrive in use stopped saving because its sign-in ran out: sign in as the same account again.
+  const cloud = cloudInUse();
+  const renew = () =>
+    run(async () => {
+      await signInAgain(cloud === 'onedrive' ? 'microsoft' : 'google', cloud === 'onedrive' ? microsoftAccount() : googleAccount());
+      await afterSignIn();
+    });
+
   return (
     <div className="place-switcher" ref={ref}>
       <button
@@ -115,7 +124,7 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
         }}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Switch where boards are saved"
+        title={signInNeeded ? 'Sign in again to keep saving' : 'Where your boards are saved'}
       >
         <PinpadMark size={26} />
         {!compact && <span className="wordmark">Pinpad</span>}
@@ -124,10 +133,16 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
       <span
         className={`save-status ${storageError ? 'error' : saved ? 'saved' : 'saving'}`}
         title={storageError ?? (saved ? 'All changes saved' : 'Saving…')}
-        onClick={storageError ? onSettings : undefined}
+        onClick={storageError ? (signInNeeded ? () => ref.current?.querySelector<HTMLButtonElement>('.logo')?.click() : onSettings) : undefined}
       />
       {open && createPortal(
         <div ref={menuRef} className="menu place-menu" role="menu" style={at}>
+          {signInNeeded && (
+            <div className="place-warning" role="alert">
+              <span><AlertTriangle size={14} /> Your {cloud === 'onedrive' ? 'OneDrive' : 'Google Drive'} sign-in ran out, so nothing is being saved there.</span>
+              <button className="btn-primary" disabled={busy} onClick={renew}>{busy ? 'Waiting…' : 'Sign in again'}</button>
+            </div>
+          )}
           <div className="place-menu-title">Your places</div>
           {!list && <div className="place-menu-note">Loading…</div>}
           {list?.places.map((place) => {

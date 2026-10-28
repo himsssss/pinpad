@@ -1130,7 +1130,6 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .signin-title { padding: 8px 10px 2px; font-size: 15px; font-weight: 600; color: var(--ink); }
 .signin-note { margin: 4px 10px 10px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
 .menu .signin-option { justify-content: center; gap: 10px; margin-top: 6px; padding: 10px; border: 1px solid var(--hairline-strong, #d9d8e6); font-weight: 600; text-align: center; }
-.avatar-badge.warn { background: #e8473f; color: #fff; }
 .menu .signin-again { margin: 4px 0 2px; border-color: transparent; background: var(--primary); color: var(--on-dark); }
 .menu .signin-again:hover:not(:disabled) { background: var(--primary-pressed); }
 .signin-sub { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--stone); }
@@ -1159,3 +1158,23 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
   box-shadow: 0 8px 24px rgba(5, 0, 56, .18); animation: toast-in .18s ease-out;
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }
+
+/* The logo's menu, when the storage's sign-in ran out. */
+.place-warning { display: flex; flex-direction: column; gap: 8px; margin: 2px 2px 8px; padding: 10px 12px; border-radius: 12px; background: #fdecea; color: #8a1f17; font-size: 12.5px; line-height: 1.4; }
+.place-warning span { display: flex; gap: 6px; align-items: flex-start; }
+.place-warning svg { flex: none; margin-top: 2px; }
+.place-warning .btn-primary { align-self: flex-start; height: 30px; margin: 0; padding: 0 14px; font-size: 13px; }
+
+/* Sign in to Pinpad (email and password). */
+.account-menu .signin-form { display: flex; flex-direction: column; gap: 10px; width: 290px; padding: 6px 6px 4px; }
+.signin-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 500; color: var(--slate); }
+.signin-field input { height: 36px; padding: 0 11px; border: 1px solid var(--hairline-strong, #d9d8e6); border-radius: 10px; font: inherit; font-size: 14px; font-weight: 400; color: var(--ink); background: #fff; }
+.signin-field input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
+.signin-form .signin-submit { justify-content: center; margin: 2px 0 0; }
+.signin-links { display: flex; justify-content: space-between; gap: 8px; }
+.menu .signin-links button { width: auto; padding: 4px 2px; background: none; color: var(--primary); font-size: 12.5px; font-weight: 500; }
+.menu .signin-links button:hover { background: none; text-decoration: underline; }
+.signin-sent { padding: 8px 10px; border-radius: 10px; background: #e9f7ee; color: #145c32; font-size: 12.5px; line-height: 1.4; }
+.account-suggest { display: flex; flex-direction: column; gap: 6px; margin: 8px 4px 2px; font-size: 12.5px; line-height: 1.4; color: var(--slate); }
+.signin-form .signin-title { padding: 2px 0 0; }
+.signin-form .signin-note { margin: 0 0 2px; }

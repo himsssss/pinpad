@@ -782,8 +782,8 @@ export async function initStore() {
     window.addEventListener(
       'pointerdown',
       (e) => {
-        // Not from the Storage location dialog's or account menu's own "Sign in again", which ask Google themselves.
-        if (!usingDrive() || !webTokenExpiring() || (e.target as Element).closest?.('.dialog, .account-menu')) return;
+        // Not from the Storage location dialog's or the logo menu's own "Sign in again", which ask Google themselves.
+        if (!usingDrive() || !webTokenExpiring() || (e.target as Element).closest?.('.dialog, .place-menu')) return;
         renewWebToken().then((ok) => ok && afterSignIn().catch(() => {}));
       },
       true,
@@ -843,7 +843,7 @@ const needsSignIn = (err: unknown) => err instanceof SignInNeeded && !(err insta
 function openError(err: unknown) {
   if (err instanceof FolderAccessNeeded) return `${err.message} Click anywhere to allow it; until then you're seeing the copy saved in this browser.`;
   if (needsSignIn(err)) {
-    return `Your ${placeName()} sign-in has run out, so nothing is being saved there. Your changes are kept on this device and saved to ${placeName()} once you sign in again (your picture, top right).`;
+    return `Your ${placeName()} sign-in has run out, so nothing is being saved there. Your changes are kept on this device and saved to ${placeName()} once you sign in again (click the Pinpad logo).`;
   }
   return `Couldn't open your boards in ${placeName()} (${errorText(err)}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until this is fixed (click the red dot by the logo).`;
 }

@@ -1,61 +1,58 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Check, LogOut, Plus } from 'lucide-react';
-import { afterSignIn, cloudInUse, useStore } from '../store';
-import { googleAccount, googleAccounts, googleAllowedHere, googleConfigured } from '../googleAuth';
-import { microsoftAccount, microsoftAccounts, microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
-import { addGoogleDrive, addOneDrive, listPlaces, openPlace, removePlace, signInAgain as signInAgainAs, type Place } from '../places';
-import { askConfirm } from './ConfirmDialog';
+import { LogOut } from 'lucide-react';
+import { cloudInUse, useStore } from '../store';
+import { googleAccount } from '../googleAuth';
+import { microsoftAccount } from '../microsoftAuth';
+import { openPlace, rememberOpenPlace } from '../places';
+import {
+  accountsConfigured, createAccount, onAccountChange, pinpadAccount, rememberedStorage, sendPasswordReset, signInWithPassword,
+  signOutOfPinpad, type RememberedStorage,
+} from '../pinpadAccount';
 import { chooseForNewPlace } from './PlaceSwitcher';
 import { DriveIcon } from './DriveIcon';
 import { OneDriveIcon } from './OneDriveIcon';
 
 const COLORS = ['#7c5cff', '#2f6fed', '#17a34a', '#e9438f', '#f06b1f', '#0e9488', '#c026d3'];
-const colorFor = (account: string) => COLORS[[...account].reduce((n, c) => n + c.charCodeAt(0), 0) % COLORS.length];
+const colorFor = (email: string) => COLORS[[...email].reduce((n, c) => n + c.charCodeAt(0), 0) % COLORS.length];
 
-type Account = { service: 'Google' | 'Microsoft'; account: string };
-
-function signedIn(): Account | null {
-  const cloud = cloudInUse();
-  if (cloud === 'drive' && googleAccount()) return { service: 'Google', account: googleAccount()! };
-  if (cloud === 'onedrive' && microsoftAccount()) return { service: 'Microsoft', account: microsoftAccount()! };
-  return null;
-}
-
-const placeOf = ({ service, account }: Account): Place =>
-  service === 'Google' ? { id: `drive:${account}`, kind: 'drive', account } : { id: `onedrive:${account}`, kind: 'onedrive', account };
-
-function Avatar({ account, size = 30, warn = false }: { account: Account; size?: number; warn?: boolean }) {
+function Avatar({ email, size = 30 }: { email: string; size?: number }) {
   return (
-    <span className="avatar" style={{ width: size, height: size, background: colorFor(account.account), fontSize: size * 0.45 }}>
-      {account.account[0]?.toUpperCase()}
-      <span className={`avatar-badge ${warn ? 'warn' : ''}`}>
-        {warn ? <AlertTriangle size={9} strokeWidth={3} /> : account.service === 'Google' ? <DriveIcon size={10} /> : <OneDriveIcon size={11} />}
-      </span>
+    <span className="avatar" style={{ width: size, height: size, background: colorFor(email), fontSize: size * 0.45 }}>
+      {email[0]?.toUpperCase()}
     </span>
   );
 }
 
+const useAccount = () => useSyncExternalStore(onAccountChange, pinpadAccount);
+
+/** Whether the remembered Drive or OneDrive is the one open now. */
+function isOpen(storage: RememberedStorage) {
+  return cloudInUse() === storage.kind && (storage.kind === 'drive' ? googleAccount() : microsoftAccount()) === storage.account;
+}
+
+const serviceName = (storage: RememberedStorage) => (storage.kind === 'drive' ? 'Google Drive' : 'OneDrive');
+
 /**
- * Sign in, at the top right: signing in with Google or Microsoft saves the boards to that
- * account's Google Drive or OneDrive (Pinpad has no accounts of its own). Signed in, it shows
- * the account, the other connected accounts to switch to, and Sign out.
+ * Sign in, at the top right: a Pinpad account, with an email and a password. It doesn't move
+ * the boards (where they're kept is chosen from the logo's menu); it remembers which Google
+ * Drive or OneDrive they're in, and offers to open it on a computer that doesn't have it open.
  */
 export function AccountButton() {
-  // Changes with every switch of place, so the button follows sign-ins made elsewhere too.
-  useStore((s) => s.storageName);
+  const account = useAccount();
+  const storageName = useStore((s) => s.storageName);
   const opening = useStore((s) => s.opening);
-  const signInNeeded = useStore((s) => s.signInNeeded);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [mode, setMode] = useState<'signin' | 'create' | 'reset'>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [remembered, setRemembered] = useState<RememberedStorage | null>(null);
   const [at, setAt] = useState({ right: 0, top: 0 });
   const ref = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const google = googleConfigured() && googleAllowedHere();
-  const microsoft = microsoftConfigured() && microsoftAllowedHere();
-  const current = signedIn();
 
   useEffect(() => {
     if (!open) return;
@@ -70,131 +67,146 @@ export function AccountButton() {
     };
   }, [open]);
 
-  // Signed in: the menu gives way to "Opening your Google Drive…".
+  // Opening the boards: the menu gives way to "Opening your Google Drive…".
   useEffect(() => {
     if (opening) setOpen(false);
   }, [opening]);
 
-  if (!google && !microsoft) return null;
-
-  const run = async (label: string, task: () => Promise<unknown>) => {
-    setBusy(label);
-    setError(null);
-    try {
-      await task();
-      setOpen(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const signOut = async (account: Account) => {
-    const ok = await askConfirm({
-      title: `Sign out of ${account.account}?`,
-      message: `Your boards stay in its ${account.service === 'Google' ? 'Google Drive' : 'OneDrive'}; sign in again any time to open them. Pinpad goes back to the boards kept on this computer.`,
-      confirm: 'Sign out',
+  // Signed in: where this account's boards are, to offer opening them here.
+  useEffect(() => {
+    if (!account) return setRemembered(null);
+    let alive = true;
+    rememberedStorage().then((storage) => {
+      if (!alive) return;
+      setRemembered(storage);
+      // Nothing remembered yet: the Drive open here is where this account's boards are.
+      if (!storage) rememberOpenPlace();
     });
-    if (!ok) return;
-    await run('signout', async () => {
-      const { places } = await listPlaces();
-      const local = places.find((p) => p.kind === 'browser' || p.kind === 'webfolder' || (p.kind === 'folder' && p.isDefault)) ?? { id: 'browser', kind: 'browser' };
-      await openPlace(local, async () => 'fresh');
-      await removePlace(placeOf(account));
-    });
-  };
+    return () => void (alive = false);
+  }, [account?.uid, open]);
 
-  // The same account again (Google's popup confirms it), then saving carries on.
-  const signInAgain = (account: Account) =>
-    run('again', async () => {
-      await signInAgainAs(account.service === 'Google' ? 'google' : 'microsoft', account.account);
-      await afterSignIn();
-    });
-
-  const others: Account[] = [
-    ...(google ? googleAccounts().map((account) => ({ service: 'Google' as const, account })) : []),
-    ...(microsoft ? microsoftAccounts().map((account) => ({ service: 'Microsoft' as const, account })) : []),
-  ].filter((a) => !current || a.account !== current.account || a.service !== current.service);
+  if (!accountsConfigured()) return null;
 
   const toggle = () => {
     const r = ref.current!.getBoundingClientRect();
     setAt({ right: window.innerWidth - r.right, top: r.bottom + 8 });
+    setError(null);
+    setNote(null);
     setOpen((o) => !o);
   };
 
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      if (mode === 'reset') {
+        await sendPasswordReset(email);
+        setNote(`If there's a Pinpad account for ${email.trim()}, an email with a link to choose a new password is on its way.`);
+        setMode('signin');
+      } else {
+        await (mode === 'create' ? createAccount(email, password) : signInWithPassword(email, password));
+        setPassword('');
+        setMode('signin');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openRemembered = async (storage: RememberedStorage) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await openPlace({ id: `${storage.kind}:${storage.account}`, kind: storage.kind, account: storage.account }, chooseForNewPlace);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const where = cloudInUse() === 'drive' ? 'Google Drive' : cloudInUse() === 'onedrive' ? 'OneDrive' : storageName ? `the “${storageName}” folder` : 'this browser';
+
   return (
     <>
-      {current ? (
-        <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={signInNeeded ? `Sign in again to keep saving to ${current.service === 'Google' ? 'Google Drive' : 'OneDrive'}` : current.account}>
-          <Avatar account={current} warn={signInNeeded} />
+      {account ? (
+        <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={account.email}>
+          <Avatar email={account.email} />
         </button>
       ) : (
-        <button ref={ref} className="signin-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open}>Sign in</button>
+        <button ref={ref} className="signin-btn" onClick={toggle} aria-haspopup="dialog" aria-expanded={open}>Sign in</button>
       )}
       {open && createPortal(
-        <div ref={menuRef} className="menu account-menu" role="menu" style={{ right: at.right, top: at.top }}>
-          {current ? (
+        <div ref={menuRef} className="menu account-menu" role={account ? 'menu' : 'dialog'} aria-label={account ? 'Account' : 'Sign in'} style={{ right: at.right, top: at.top }}>
+          {account ? (
             <>
               <div className="account-head">
-                <Avatar account={current} size={40} />
+                <Avatar email={account.email} size={40} />
                 <div className="account-text">
-                  <div className="account-email">{current.account}</div>
-                  <div className="account-where">
-                    {signInNeeded ? 'Not saving: sign-in ran out' : `Saving to ${current.service === 'Google' ? 'Google Drive' : 'OneDrive'}`}
-                  </div>
+                  <div className="account-email">{account.email}</div>
+                  <div className="account-where">Boards saved in {where}</div>
                 </div>
               </div>
-              {signInNeeded && (
-                <button role="menuitem" className="signin-option signin-again" disabled={!!busy} onClick={() => signInAgain(current)}>
-                  {current.service === 'Google' ? <DriveIcon size={18} /> : <OneDriveIcon size={19} />}
-                  {busy === 'again' ? `Waiting for ${current.service}…` : 'Sign in again'}
-                </button>
+              {remembered && !isOpen(remembered) && (
+                <div className="account-suggest">
+                  <span>Your boards are in {serviceName(remembered)} ({remembered.account}).</span>
+                  <button className="signin-option signin-again" disabled={busy} onClick={() => openRemembered(remembered)}>
+                    {remembered.kind === 'drive' ? <DriveIcon size={18} /> : <OneDriveIcon size={19} />} {busy ? 'Opening…' : 'Open them here'}
+                  </button>
+                </div>
               )}
-              {others.length > 0 && <div className="menu-sep" />}
-              {others.map((a) => (
-                <button key={a.service + a.account} role="menuitem" disabled={!!busy} onClick={() => run(a.account, () => openPlace(placeOf(a), chooseForNewPlace))}>
-                  <Avatar account={a} size={24} /> <span className="account-other">{a.account}</span>
-                </button>
-              ))}
               <div className="menu-sep" />
-              {google && (
-                <button role="menuitem" disabled={!!busy} onClick={() => run('google', () => addGoogleDrive(chooseForNewPlace))}>
-                  <Plus size={14} /> {busy === 'google' ? 'Waiting for Google…' : 'Add another Google account'}
-                </button>
-              )}
-              <button role="menuitem" disabled={!!busy} onClick={() => signOut(current)}>
-                <LogOut size={14} /> Sign out
+              <button role="menuitem" disabled={busy} onClick={() => (signOutOfPinpad(), setOpen(false))}>
+                <LogOut size={14} /> Sign out of Pinpad
               </button>
             </>
           ) : (
-            <>
-              <div className="signin-title">Sign in to save your boards</div>
-              <p className="signin-note">Your boards are saved in your own {google && microsoft ? 'Google Drive or OneDrive' : google ? 'Google Drive' : 'OneDrive'}, so you can open them on any computer. Pinpad can only see the files it makes there.</p>
-              {google && (
-                <button role="menuitem" className="signin-option" disabled={!!busy} onClick={() => run('google', () => addGoogleDrive(chooseForNewPlace))}>
-                  <DriveIcon size={18} /> {busy === 'google' ? 'Waiting for Google…' : 'Continue with Google'}
-                </button>
+            <form className="signin-form" onSubmit={submit}>
+              <div className="signin-title">{mode === 'create' ? 'Create your Pinpad account' : mode === 'reset' ? 'Reset your password' : 'Sign in to Pinpad'}</div>
+              <p className="signin-note">
+                {mode === 'reset'
+                  ? 'We’ll email you a link to choose a new password.'
+                  : 'Your account remembers where your boards are saved, so you can open them on any computer. Choose where they’re saved from the Pinpad logo.'}
+              </p>
+              <label className="signin-field">
+                <span>Email</span>
+                <input type="email" autoComplete="username" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
+              </label>
+              {mode !== 'reset' && (
+                <label className="signin-field">
+                  <span>Password</span>
+                  <input
+                    type="password"
+                    autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+                    required
+                    minLength={mode === 'create' ? 6 : undefined}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </label>
               )}
-              {microsoft && (
-                <button role="menuitem" className="signin-option" disabled={!!busy} onClick={() => run('microsoft', () => addOneDrive(chooseForNewPlace))}>
-                  <OneDriveIcon size={19} /> {busy === 'microsoft' ? 'Waiting for Microsoft…' : 'Continue with Microsoft'}
-                </button>
-              )}
-              {others.length > 0 && (
-                <>
-                  <div className="menu-sep" />
-                  <div className="signin-sub">Signed in before</div>
-                  {others.map((a) => (
-                    <button key={a.service + a.account} role="menuitem" disabled={!!busy} onClick={() => run(a.account, () => openPlace(placeOf(a), chooseForNewPlace))}>
-                      <Avatar account={a} size={24} /> <span className="account-other">{a.account}</span> {busy === a.account && <Check size={14} />}
-                    </button>
-                  ))}
-                </>
-              )}
-            </>
+              {error && <div className="place-menu-error" role="alert">{error}</div>}
+              {note && <div className="signin-sent" role="status">{note}</div>}
+              <button type="submit" className="btn-primary signin-submit" disabled={busy}>
+                {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}
+              </button>
+              <div className="signin-links">
+                {mode === 'signin' ? (
+                  <>
+                    <button type="button" onClick={() => (setMode('create'), setError(null))}>Create an account</button>
+                    <button type="button" onClick={() => (setMode('reset'), setError(null))}>Forgot password?</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => (setMode('signin'), setError(null))}>{mode === 'create' ? 'I already have an account' : 'Back to sign in'}</button>
+                )}
+              </div>
+            </form>
           )}
-          {error && <div className="place-menu-error" role="alert">{error}</div>}
         </div>,
         document.body,
       )}

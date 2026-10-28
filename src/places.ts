@@ -7,6 +7,7 @@
 import { browserHasBoards, cloudInUse, flushNow, setOpening, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
 import { chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderHasWorkspace, webFolders, webFoldersSupported } from './webFolderStorage';
 import { nativeStorage } from './native';
+import { pinpadAccount, rememberStorage } from './pinpadAccount';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
 import {
@@ -85,6 +86,14 @@ export async function openPlace(place: Place, choose: NewPlaceChoice) {
   } finally {
     if (cloud) setOpening(null);
   }
+  rememberOpenPlace();
+}
+
+/** Remembers in the Pinpad account (when signed in) which Drive or OneDrive is open, for other computers. */
+export function rememberOpenPlace() {
+  if (!pinpadAccount()) return;
+  const account = usingDrive() ? googleAccount() : usingOneDrive() ? microsoftAccount() : null;
+  if (account) rememberStorage({ kind: usingDrive() ? 'drive' : 'onedrive', account }).catch(() => {});
 }
 
 async function open(place: Place, choose: NewPlaceChoice) {
