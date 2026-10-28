@@ -13,7 +13,7 @@ import { webFoldersSupported } from '../webFolderStorage';
 import { PinpadMark } from './PinpadMark';
 
 /** A place with no Pinpad boards yet: start empty there, or copy the open boards over. */
-const chooseForNewPlace: NewPlaceChoice = async (where) => {
+export const chooseForNewPlace: NewPlaceChoice = async (where) => {
   const answer = await askChoice({
     title: `Pinpad hasn't been used in ${where} yet`,
     message: 'Start with an empty workspace there, or copy the boards you have open now? Nothing here is removed either way.',

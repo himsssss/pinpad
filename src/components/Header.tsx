@@ -7,6 +7,7 @@ import { browse, getState, mutate, openBoard, redo, setUI, undo, useStore } from
 import { PlaceSwitcher } from './PlaceSwitcher';
 import { SaveBar } from './SaveBar';
 import { parseWorkspace } from '../workspaceFiles';
+import { AccountButton } from './AccountButton';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
@@ -228,6 +229,7 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
             </div>
           )}
         </div>
+        <AccountButton />
       </div>
       {storageOpen && <StorageDialog onClose={() => setStorageOpen(false)} />}
     </>
