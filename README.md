@@ -64,11 +64,13 @@ npm run build:win    # Windows installers in release/ (Electron; can be built on
 npm run desktop      # run the Electron shell locally
 ```
 
-The website is hosted on Vercel. To publish it, build it without the desktop client's secret
-and deploy the folder:
+The website is hosted on Vercel. To publish it, build it without the desktop client's secret,
+add its link-preview reader (`api/preview.js`, which reads linked pages for their title and
+picture, since a browser can't) and deploy the folder:
 
 ```bash
 VITE_GOOGLE_DESKTOP_CLIENT_SECRET= npx vite build --outDir web-deploy/pinpad
+cp -R api web-deploy/pinpad/
 cd web-deploy/pinpad && npx vercel deploy --prod
 ```
 

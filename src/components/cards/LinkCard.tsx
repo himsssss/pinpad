@@ -10,12 +10,15 @@ import { Editable } from '../Editable';
 
 /** Links whose preview is being fetched, so remounts don't fetch twice. */
 const inFlight = new Set<string>();
+/** Links tried again this session for a missing picture: once is enough. */
+const retried = new Set<string>();
 
 function usePreview(el: LinkEl) {
   useEffect(() => {
-    // Fetched before without a picture: tried again where Pinterest's pictures now come through.
-    const stale = el.previewFor === el.url && !el.preview?.image && previewImproved(el.url);
+    // Fetched before without a picture: tried again (once a session) where one may come through now.
+    const stale = el.previewFor === el.url && !el.preview?.image && previewImproved(el.url) && !retried.has(el.url);
     if (!el.url || (el.previewFor === el.url && !stale) || inFlight.has(el.id)) return;
+    if (stale) retried.add(el.url);
     inFlight.add(el.id);
     const url = el.url;
     fetchPreview(url).then((preview) => {

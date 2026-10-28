@@ -1,8 +1,8 @@
 /**
  * Rich link previews (title, image, description, video). YouTube and Vimeo come from their
  * oEmbed APIs, which allow cross-origin requests. Other pages need their HTML, which browsers
- * block across origins, so it comes from the desktop app (window.pinpadNative) or the dev
- * server; the static web build falls back to the plain link card.
+ * block across origins, so it comes from the desktop app (window.pinpadNative), the dev
+ * server, or on the website its own page reader (api/preview.js).
  */
 
 import type { LinkPreview } from './types';
@@ -39,10 +39,10 @@ async function json<T>(url: string): Promise<T | null> {
 async function fetchPage(url: string): Promise<PageResponse | null> {
   try {
     if (window.pinpadNative) return await window.pinpadNative.fetchPage(url);
-    if (import.meta.env.DEV) {
-      const res = await fetch(`/__preview?url=${encodeURIComponent(url)}`);
-      return res.ok ? ((await res.json()) as PageResponse) : null;
-    }
+    // The dev server, or the website's own page reader (api/preview.js, on Vercel).
+    const reader = import.meta.env.DEV ? '/__preview' : '/api/preview';
+    const res = await fetch(`${reader}?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12000) });
+    if (res.ok && res.headers.get('content-type')?.includes('json')) return (await res.json()) as PageResponse;
   } catch {
     // Fall through to "no preview".
   }
@@ -130,8 +130,11 @@ async function pinterest(url: string): Promise<LinkPreview | null> {
   };
 }
 
-/** Links whose earlier preview came out without a picture, but which can have one now. */
-export const previewImproved = (url: string) => !!pinterestTarget(url);
+/**
+ * Links whose earlier preview came out without a picture but may have one now: Pinterest's,
+ * and on the website any link (it had no page reader before api/preview.js).
+ */
+export const previewImproved = (url: string) => !!pinterestTarget(url) || (!window.pinpadNative && /^https?:\/\//i.test(url));
 
 export async function fetchPreview(url: string): Promise<LinkPreview | null> {
   const yt = youtubeId(url);
