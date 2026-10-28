@@ -1,7 +1,5 @@
-import { microsoftConfigured } from '../microsoftAuth';
-import { webFoldersSupported } from '../webFolderStorage';
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Folder, PanelLeftOpen, Download, FileImage, FileText, FolderCog, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Folder, PanelLeftOpen, Download, FileImage, FileText, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import { exportBoardImage, exportBoardPdf } from '../exportBoard';
 import { TRASH } from './TrashPage';
 import type { Doc } from '../types';
@@ -9,8 +7,6 @@ import { browse, getState, mutate, openBoard, redo, setUI, undo, useStore } from
 import { PlaceSwitcher } from './PlaceSwitcher';
 import { SaveBar } from './SaveBar';
 import { parseWorkspace } from '../workspaceFiles';
-import { nativeStorage } from '../native';
-import { googleConfigured } from '../googleAuth';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
@@ -204,9 +200,6 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
           <button className="icon-btn" onClick={() => setMenu((m) => !m)} aria-label="Settings" title="Settings"><Settings size={18} /></button>
           {menu && (
             <div className="menu">
-              {(nativeStorage() || googleConfigured() || microsoftConfigured() || webFoldersSupported()) && (
-                <button onClick={() => { setStorageOpen(true); setMenu(false); }}><FolderCog size={14} /> Storage location…</button>
-              )}
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
               <button onClick={() => { importJSON(); setMenu(false); }}><Upload size={14} /> Import workspace</button>
               <button onClick={() => { onShortcuts(); setMenu(false); }}><Keyboard size={14} /> Keyboard shortcuts <kbd className="menu-kbd">?</kbd></button>
