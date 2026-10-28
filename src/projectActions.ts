@@ -131,6 +131,57 @@ export function addTemplateToBoard(templateId: string) {
   mutate((d) => copyTemplate(d, template, ui.boardId, dx, dy));
 }
 
+/**
+ * Copies of projects to send to someone (shareFile.ts): a project (or any board, which
+ * arrives as a project), or every project in a sidebar folder (its subfolders included),
+ * each with all its boards and cards.
+ */
+export function projectCopies(target: { kind: 'project' | 'board' | 'folder'; id: string }): SavedTemplate[] {
+  const { doc } = getState();
+  const ids = target.kind !== 'folder' ? [target.id] : projectsIn(doc, new Set(folderTree(doc, target.id).map((f) => f.id))).map((b) => b.id);
+  const plain = <T>(v: T): T => structuredClone(v);
+  return ids.filter((id) => doc.boards[id]).map((rootId) => {
+    const tree = boardTree(doc, rootId);
+    return {
+      id: uid(),
+      name: doc.boards[rootId].title || 'Untitled',
+      createdAt: Date.now(),
+      rootId,
+      boards: [...tree].map((id) => plain(doc.boards[id])),
+      elements: Object.values(doc.elements).filter((e) => tree.has(e.boardId)).map(plain),
+    };
+  });
+}
+
+/**
+ * Adds copies of projects someone sent (shareFile.ts) as new projects, in a folder of their
+ * own when a whole folder was sent. Returns the first one's id.
+ */
+export function importCopies(copies: SavedTemplate[], folderName: string | null) {
+  const ids: string[] = [];
+  mutate((d) => {
+    let folderId: string | undefined;
+    if (folderName) {
+      folderId = uid();
+      d.folders[folderId] = { id: folderId, name: folderName, order: Math.max(0, ...Object.values(d.folders).map((f) => f.order)) + 1 };
+    }
+    const onHome = Object.values(d.elements).filter((e) => e.boardId === d.rootId && !e.columnId && e.type !== 'line');
+    let x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
+    for (const copy of copies) {
+      const { el, board } = createElement('board', d.rootId, x, 80, maxZ(d) + 1);
+      if (!board) continue;
+      const look = copy.boards.find((b) => b.id === copy.rootId);
+      Object.assign(board, { title: copy.name, folderId, ...(look ? { color: look.color, icon: look.icon } : {}) });
+      d.elements[el.id] = el;
+      d.boards[board.id] = board;
+      copyTemplate(d, copy, board.id, 0, 0);
+      ids.push(board.id);
+      x += 140;
+    }
+  });
+  return { first: ids[0], count: ids.length };
+}
+
 export function deleteTemplate(templateId: string) {
   mutate((d) => {
     d.templates = (d.templates ?? []).filter((t) => t.id !== templateId);

@@ -563,6 +563,9 @@ export async function unsavedReason(): Promise<string | null> {
   return null;
 }
 
+/** Resolves once the boards shown are the saved ones (after reading Google Drive, say). */
+export const whenOpened = () => startup;
+
 /** Writes any pending change now (the desktop apps call this before quitting). */
 export async function flushNow() {
   if (persistTimer !== undefined) await flush();

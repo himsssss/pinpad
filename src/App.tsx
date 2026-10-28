@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getState, openBoard, redo, select, setUI, startEditing, undo, useStore } from './store';
+import { browse, getState, openBoard, redo, select, setUI, startEditing, undo, useStore, whenOpened } from './store';
 import { copySelection, deleteSelection, duplicateSelection, nudgeSelection, paste, selectAll } from './actions';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
@@ -10,6 +10,9 @@ import { ProjectsPage } from './components/ProjectsPage';
 import { TRASH, TrashPage } from './components/TrashPage';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
+import { ShareDialog } from './components/ShareDialog';
+import { askConfirm } from './components/ConfirmDialog';
+import { clearLinkFromUrl, linkInUrl } from './boardLinks';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
 import { ContextMenu } from './components/ContextMenu';
@@ -143,6 +146,28 @@ export function App() {
     };
   }, []);
 
+  // A shared link (#board=… or #folder=…) opens that board or folder straight away.
+  useEffect(() => {
+    const go = async () => {
+      const link = linkInUrl();
+      if (!link) return;
+      clearLinkFromUrl();
+      await whenOpened();
+      const { doc } = getState();
+      if (link.kind === 'board' && doc.boards[link.id]) return openBoard(link.id);
+      if (link.kind === 'folder' && doc.folders[link.id]) return browse(link.id);
+      askConfirm({
+        title: `This ${link.kind} isn't in your boards`,
+        message:
+          'The link opens it for people who use the same boards: signed in to the same Google Drive (Sign in, top right), or using the same shared folder. Ask whoever sent it to send a copy instead.',
+        confirm: 'OK',
+      });
+    };
+    go();
+    window.addEventListener('hashchange', go);
+    return () => window.removeEventListener('hashchange', go);
+  }, []);
+
   return (
     // The canvas fills the window; header, folders and tools float over it in rounded panels.
     <div className={`app ${sidebarOpen ? 'with-sidebar' : ''}`}>
@@ -155,6 +180,7 @@ export function App() {
       <CardMenu />
       <ContextMenu />
       <ConfirmDialog />
+      <ShareDialog />
       <UpdatePrompt />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>

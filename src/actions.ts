@@ -4,6 +4,7 @@ import { DEFAULT_WIDTH, cloneElements, createElement, deleteElements, hostname, 
 import { viewportCenter, worldRect } from './interactions';
 import { readImage } from './images';
 import { addAttachment } from './attachments';
+import { importShareFile } from './shareFile';
 import { askConfirm } from './components/ConfirmDialog';
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -83,6 +84,11 @@ export function addImages(srcs: string[], at = viewportCenter()) {
  * audio, documents…) as file cards with a preview.
  */
 export async function addFiles(files: File[], at = viewportCenter()) {
+  // A copy someone sent (Send a copy): its projects are added, not attached as a file.
+  const sent = files.filter((f) => /\.pinpad$/i.test(f.name));
+  for (const f of sent) await importShareFile(await f.text()).catch((err) => alert(`Couldn't import “${f.name}”: ${err.message}`));
+  files = files.filter((f) => !sent.includes(f));
+  if (!files.length) return;
   // Only pictures every browser can show become image cards (not Photoshop or HEIC files).
   const images = files.filter((f) => /^image\/(png|jpe?g|gif|webp|avif|bmp|svg\+xml)$/.test(f.type));
   const others = files.filter((f) => !images.includes(f));

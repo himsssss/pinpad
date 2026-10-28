@@ -1131,3 +1131,14 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .signin-note { margin: 4px 10px 10px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
 .menu .signin-option { justify-content: center; gap: 10px; margin-top: 6px; padding: 10px; border: 1px solid var(--hairline-strong, #d9d8e6); font-weight: 600; text-align: center; }
 .signin-sub { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--stone); }
+
+/* share */
+.share-dialog { width: min(520px, calc(100vw - 32px)); }
+.share-section { margin-top: 14px; padding: 14px; border-radius: var(--r-md); background: var(--surface); }
+.share-section-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--ink); }
+.share-detail { margin: 6px 0 10px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
+.share-link { display: flex; gap: 8px; }
+.share-link input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--hairline); border-radius: var(--r-md); font-size: 12.5px; color: var(--slate); background: var(--panel); }
+.share-link button, .share-actions button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.share-actions { display: flex; gap: 8px; }
+.share-note { margin: 10px 0 0; font-size: 12.5px; color: var(--slate); }

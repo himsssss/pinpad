@@ -2,8 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalDistributeCenter,
   AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter, ArrowDownToLine, ArrowUpToLine, Copy,
-  FolderOpen, LayoutTemplate, Pencil, Trash2, type LucideIcon,
-} from 'lucide-react';
+  FolderOpen, LayoutTemplate, Pencil, Trash2, type LucideIcon, Share2 } from 'lucide-react';
+import { openShare } from './ShareDialog';
 import { saveAsTemplate } from '../projectActions';
 import { worldRect } from '../interactions';
 import { getState, mutate, openBoard, startEditing } from '../store';
@@ -147,6 +147,9 @@ export function CardMenu() {
       <button role="menuitem" onClick={run(duplicateSelection)}><Copy size={14} /> Duplicate <kbd className="menu-kbd">{MOD}D</kbd></button>
       {single?.type === 'board' && (
         <button role="menuitem" onClick={run(() => saveAsTemplate(single.targetId))}><LayoutTemplate size={14} /> Save as template</button>
+      )}
+      {single?.type === 'board' && (
+        <button role="menuitem" onClick={run(() => openShare({ kind: 'board', id: single.targetId }))}><Share2 size={14} /> Share…</button>
       )}
       {placeable >= 2 && (
         <>

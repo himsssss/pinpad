@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ChevronRight, Folder, PanelLeftOpen, Download, FileImage, FileText, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
+import { ChevronRight, Folder, PanelLeftOpen, Share2, Download, FileImage, FileText, HardDriveDownload, Keyboard, Redo2, Search, Settings, Undo2, Upload, RotateCcw } from 'lucide-react';
 import { exportBoardImage, exportBoardPdf } from '../exportBoard';
 import { TRASH } from './TrashPage';
 import type { Doc } from '../types';
@@ -7,6 +7,8 @@ import { browse, getState, mutate, openBoard, redo, setUI, undo, useStore } from
 import { PlaceSwitcher } from './PlaceSwitcher';
 import { SaveBar } from './SaveBar';
 import { parseWorkspace } from '../workspaceFiles';
+import { importShareFile, isShareFile, pickImportFile } from '../shareFile';
+import { openShare } from './ShareDialog';
 import { AccountButton } from './AccountButton';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
@@ -32,21 +34,18 @@ function replaceDoc(doc: Doc) {
   openBoard(doc.rootId);
 }
 
-function importJSON() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'application/json';
-  input.onchange = async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    try {
-      const doc = parseWorkspace(await file.text());
-      if (confirm('Replace your workspace with this file? You can undo this.')) replaceDoc(doc);
-    } catch (err) {
-      alert(`Couldn't import: ${(err as Error).message}`);
-    }
-  };
-  input.click();
+/** Imports a sent copy (as new projects) or a whole workspace backup (replacing the boards). */
+async function importFile() {
+  const file = await pickImportFile();
+  if (!file) return;
+  try {
+    const text = await file.text();
+    if (isShareFile(text)) return void (await importShareFile(text));
+    const doc = parseWorkspace(text);
+    if (confirm('Replace your workspace with this file? You can undo this.')) replaceDoc(doc);
+  } catch (err) {
+    alert(`Couldn't import: ${(err as Error).message}`);
+  }
 }
 
 let showStorage: (() => void) | null = null;
@@ -196,13 +195,22 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
         <button className="icon-btn" onClick={undo} disabled={!canUndo} aria-label="Undo" title={`Undo (${MOD}Z)`}><Undo2 size={18} /></button>
         <button className="icon-btn" onClick={redo} disabled={!canRedo} aria-label="Redo" title={`Redo (${SHIFT}${MOD}Z)`}><Redo2 size={18} /></button>
         <span className="topbar-sep" />
+        <button
+          className="icon-btn"
+          onClick={() => (browsing ? openShare({ kind: 'folder', id: browsing }) : openShare({ kind: boardId === getState().doc.rootId ? 'board' : getState().doc.boards[boardId]?.parentId === getState().doc.rootId ? 'project' : 'board', id: boardId }))}
+          disabled={browsing === TRASH || (browsing !== null && !browsing)}
+          aria-label="Share"
+          title="Share this board"
+        >
+          <Share2 size={18} />
+        </button>
         <button className="icon-btn" onClick={onSearch} aria-label="Search" title={`Search (${MOD}K)`}><Search size={18} /></button>
         <div className="menu-wrap" ref={menuRef}>
           <button className="icon-btn" onClick={() => setMenu((m) => !m)} aria-label="Settings" title="Settings"><Settings size={18} /></button>
           {menu && (
             <div className="menu">
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
-              <button onClick={() => { importJSON(); setMenu(false); }}><Upload size={14} /> Import workspace</button>
+              <button onClick={() => { importFile(); setMenu(false); }}><Upload size={14} /> Import…</button>
               <button onClick={() => { onShortcuts(); setMenu(false); }}><Keyboard size={14} /> Keyboard shortcuts <kbd className="menu-kbd">?</kbd></button>
               <button onClick={() => { if (confirm('Reset to the demo workspace? You can undo this.')) replaceDoc(seedDoc()); setMenu(false); }}>
                 <RotateCcw size={14} /> Reset to demo
