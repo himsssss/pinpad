@@ -263,7 +263,7 @@ input { font: inherit; color: inherit; }
   box-shadow: var(--shadow-2);
 }
 .app.with-sidebar .projects-page { left: calc(var(--gap) + var(--sidebar-w) + 10px); }
-.projects-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.projects-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .projects-trail { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; font-size: 22px; font-weight: 500; letter-spacing: -0.2px; }
 .projects-trail button, .projects-current { padding: 4px 10px; border-radius: var(--r-full); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 .projects-trail button { color: var(--steel); }
@@ -272,8 +272,9 @@ input { font: inherit; color: inherit; }
 .projects-trail button.drop-over { background: var(--blue-tint); color: var(--blue); }
 .projects-crumb { display: flex; align-items: center; min-width: 0; color: var(--stone); }
 .projects-current { color: var(--ink); }
-.projects-actions { display: flex; align-items: center; gap: 8px; }
-.projects-actions .btn-secondary, .projects-actions .btn-primary { gap: 6px; margin: 0; }
+.projects-actions { display: flex; align-items: center; gap: 2px; }
+.projects-actions .icon-btn { width: 32px; height: 32px; color: var(--steel); }
+.projects-actions .projects-new { gap: 6px; margin: 0 0 0 8px; height: 32px; padding: 0 14px; font-size: 13px; }
 .projects-label { margin: 20px 0 12px; font-size: 14px; font-weight: 500; color: var(--charcoal); }
 
 .folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
@@ -870,7 +871,6 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
   .projects-page, .app.with-sidebar .projects-page { left: var(--gap); padding: 16px 14px 32px; }
   .projects-trail { font-size: 18px; }
   .projects-trail button, .projects-current { padding: 4px 6px; max-width: 200px; }
-  .projects-actions .btn-secondary, .projects-actions .btn-primary { height: 34px; padding: 0 12px; font-size: 13px; }
   .folder-grid, .project-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
   .folder-tile { padding: 10px 12px; column-gap: 10px; }
   .dialog { padding: 16px 16px 20px; }
@@ -953,28 +953,23 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 
 /* ---------- Projects page: sort, Grid/List switch and the Drive-style list ---------- */
 
-.projects-tools { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 4px 0 4px; }
-.sort-by { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--steel); }
 .sort-by select {
   font: inherit;
-  color: var(--ink);
-  background: var(--panel);
+  font-size: 13px;
+  color: var(--steel);
+  background: transparent;
   border: 0;
-  box-shadow: inset 0 0 0 1px var(--hairline-strong);
-  border-radius: var(--r-full);
+  border-radius: var(--r-md);
   height: 32px;
-  padding: 0 28px 0 12px;
+  padding: 0 22px 0 10px;
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--steel) 50%), linear-gradient(135deg, var(--steel) 50%, transparent 50%);
-  background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px;
-  background-size: 5px 5px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 12px) 14px, calc(100% - 8px) 14px;
+  background-size: 4px 4px;
   background-repeat: no-repeat;
   cursor: pointer;
 }
-.projects-tools .icon-btn { width: 32px; height: 32px; }
-.view-switch { display: flex; padding: 2px; border-radius: var(--r-full); box-shadow: inset 0 0 0 1px var(--hairline-strong); margin-left: 4px; }
-.view-switch button { width: 34px; height: 28px; display: grid; place-items: center; border-radius: var(--r-full); color: var(--steel); }
-.view-switch button[aria-pressed='true'] { background: var(--blue-tint); color: var(--blue); }
+.sort-by select:hover { background-color: var(--surface); color: var(--ink); }
 
 .file-list { margin-top: 8px; }
 .list-head, .list-row {
@@ -997,7 +992,6 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 @media (max-width: 640px) {
   .list-head, .list-row { grid-template-columns: minmax(0, 1fr) 90px 80px; }
   .list-head > :nth-child(2), .list-row > :nth-child(2) { display: none; }
-  .projects-tools { flex-wrap: wrap; }
 }
 .crumb button.crumb-folder-link { display: inline-flex; align-items: center; gap: 5px; }
 
@@ -1166,15 +1160,27 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .place-warning .btn-primary { align-self: flex-start; height: 30px; margin: 0; padding: 0 14px; font-size: 13px; }
 
 /* Sign in to Pinpad (email and password). */
-.account-menu .signin-form { display: flex; flex-direction: column; gap: 10px; width: 290px; padding: 6px 6px 4px; }
-.signin-field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 500; color: var(--slate); }
-.signin-field input { height: 36px; padding: 0 11px; border: 1px solid var(--hairline-strong, #d9d8e6); border-radius: 10px; font: inherit; font-size: 14px; font-weight: 400; color: var(--ink); background: #fff; }
-.signin-field input:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
-.signin-form .signin-submit { justify-content: center; margin: 2px 0 0; }
-.signin-links { display: flex; justify-content: space-between; gap: 8px; }
-.menu .signin-links button { width: auto; padding: 4px 2px; background: none; color: var(--primary); font-size: 12.5px; font-weight: 500; }
-.menu .signin-links button:hover { background: none; text-decoration: underline; }
+.account-menu:has(.signin-form) { width: 320px; padding: 0; border-radius: var(--r-xl); }
+.account-menu .signin-form { display: flex; flex-direction: column; gap: 14px; width: 100%; padding: 24px 22px 18px; }
+.signin-head { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 4px; text-align: center; }
+.signin-head svg { margin-bottom: 8px; }
+.signin-form .signin-title { padding: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.2px; }
+.signin-form .signin-note { margin: 0; font-size: 13px; color: var(--steel); }
+.signin-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--charcoal); }
+.signin-label-row { display: flex; align-items: center; justify-content: space-between; }
+.signin-field input { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--hairline); border-radius: var(--r-md); font: inherit; font-size: 14px; font-weight: 400; color: var(--ink); background: var(--surface-soft); transition: border-color .15s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease); }
+.signin-field input::placeholder { color: var(--muted); }
+.signin-field input:hover { border-color: var(--hairline-strong); }
+.signin-field input:focus { outline: none; background: var(--panel); border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
+.signin-password { position: relative; display: block; }
+.signin-password input { padding-right: 40px; }
+.menu .signin-eye { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--stone); border-radius: var(--r-sm); }
+.menu .signin-eye:hover { background: var(--surface); color: var(--ink); }
+.signin-form .signin-submit { justify-content: center; height: 40px; margin: 4px 0 0; font-size: 14px; }
+.menu .signin-link { display: inline; width: auto; padding: 0; background: none; color: var(--blue); font: inherit; font-weight: 500; }
+.menu .signin-link:hover { background: none; text-decoration: underline; }
+.signin-label-row .signin-link { font-size: 12.5px; }
+.signin-foot { font-size: 13px; color: var(--steel); text-align: center; }
+.signin-where { margin: 2px -22px -18px; padding: 10px 22px; border-top: 1px solid var(--hairline-soft); background: var(--surface-soft); border-radius: 0 0 var(--r-xl) var(--r-xl); font-size: 11.5px; line-height: 1.4; color: var(--stone); text-align: center; }
 .signin-sent { padding: 8px 10px; border-radius: 10px; background: #e9f7ee; color: #145c32; font-size: 12.5px; line-height: 1.4; }
 .account-suggest { display: flex; flex-direction: column; gap: 6px; margin: 8px 4px 2px; font-size: 12.5px; line-height: 1.4; color: var(--slate); }
-.signin-form .signin-title { padding: 2px 0 0; }
-.signin-form .signin-note { margin: 0 0 2px; }

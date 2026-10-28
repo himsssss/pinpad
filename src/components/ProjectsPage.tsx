@@ -161,37 +161,33 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
           ))}
         </nav>
         <div className="projects-actions">
-          <button className="btn-secondary" onClick={() => createFolder(folder?.id, 'page')}>
-            <FolderPlus size={16} /> New folder
+          <label className="sort-by" title="Sort by">
+            <select value={sort.by} onChange={(e) => setSort(e.target.value as 'name' | 'edited')} aria-label="Sort by">
+              <option value="name">Name</option>
+              <option value="edited">Last edited</option>
+            </select>
+          </label>
+          <button
+            className="icon-btn"
+            onClick={() => setUI({ projectsSort: { ...sort, desc: !sort.desc } })}
+            aria-label={sort.desc ? 'Sort ascending' : 'Sort descending'}
+            title={sort.by === 'name' ? (sort.desc ? 'Z to A' : 'A to Z') : sort.desc ? 'Newest first' : 'Oldest first'}
+          >
+            {sort.desc ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
           </button>
-          <button className="btn-primary" onClick={() => newProject(folder?.id)}>
-            <Plus size={16} /> New project
+          <button
+            className="icon-btn"
+            onClick={() => setUI({ projectsView: view === 'grid' ? 'list' : 'grid' })}
+            title={view === 'grid' ? 'List view' : 'Grid view'}
+            aria-label={view === 'grid' ? 'List view' : 'Grid view'}
+          >
+            {view === 'grid' ? <List size={16} /> : <LayoutGrid size={16} />}
           </button>
-        </div>
-      </div>
-
-      <div className="projects-tools">
-        <label className="sort-by">
-          Sort by
-          <select value={sort.by} onChange={(e) => setSort(e.target.value as 'name' | 'edited')}>
-            <option value="name">Name</option>
-            <option value="edited">Last edited</option>
-          </select>
-        </label>
-        <button
-          className="icon-btn"
-          onClick={() => setUI({ projectsSort: { ...sort, desc: !sort.desc } })}
-          aria-label={sort.desc ? 'Sort ascending' : 'Sort descending'}
-          title={sort.by === 'name' ? (sort.desc ? 'Z to A' : 'A to Z') : sort.desc ? 'Newest first' : 'Oldest first'}
-        >
-          {sort.desc ? <ArrowDown size={16} /> : <ArrowUp size={16} />}
-        </button>
-        <div className="view-switch" role="group" aria-label="View">
-          <button aria-pressed={view === 'grid'} onClick={() => setUI({ projectsView: 'grid' })} title="Grid view" aria-label="Grid view">
-            <LayoutGrid size={16} />
+          <button className="icon-btn" onClick={() => createFolder(folder?.id, 'page')} title="New folder" aria-label="New folder">
+            <FolderPlus size={16} />
           </button>
-          <button aria-pressed={view === 'list'} onClick={() => setUI({ projectsView: 'list' })} title="List view" aria-label="List view">
-            <List size={16} />
+          <button className="btn-primary projects-new" onClick={() => newProject(folder?.id)}>
+            <Plus size={15} /> New project
           </button>
         </div>
       </div>
@@ -311,7 +307,7 @@ export function ProjectsPage({ folderId }: { folderId: string | null }) {
       {/* At the top level, a list where every project is in a folder needs no empty section. */}
       {view === 'grid' && (items.length > 0 || folder || subfolders.length === 0) && (
         <section>
-          <h2 className="projects-label">Projects</h2>
+          {subfolders.length > 0 && <h2 className="projects-label">Projects</h2>}
           {items.length ? (
             <div className="project-grid">
               {items.map((b) => {
