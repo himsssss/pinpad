@@ -5,7 +5,7 @@ import { viewportCenter, worldRect } from './interactions';
 import { readImage } from './images';
 import { addAttachment } from './attachments';
 import { importShareFile } from './shareFile';
-import { askConfirm } from './components/ConfirmDialog';
+import { tell } from './components/ConfirmDialog';
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -86,7 +86,9 @@ export function addImages(srcs: string[], at = viewportCenter()) {
 export async function addFiles(files: File[], at = viewportCenter()) {
   // A copy someone sent (Send a copy): its projects are added, not attached as a file.
   const sent = files.filter((f) => /\.pinpad$/i.test(f.name));
-  for (const f of sent) await importShareFile(await f.text()).catch((err) => alert(`Couldn't import “${f.name}”: ${err.message}`));
+  for (const f of sent) {
+    await importShareFile(await f.text()).catch((err) => tell(`Couldn't import “${f.name}”`, err.message));
+  }
   files = files.filter((f) => !sent.includes(f));
   if (!files.length) return;
   // Only pictures every browser can show become image cards (not Photoshop or HEIC files).
@@ -125,7 +127,7 @@ export async function addFiles(files: File[], at = viewportCenter()) {
     select(ids);
   }
   if (refused.length) {
-    askConfirm({ title: 'Some files weren\'t added', message: `${refused.join('. ')}. Files can be up to 200 MB.`, confirm: 'OK' });
+    tell('Some files weren\'t added', `${refused.join('. ')}. Files can be up to 200 MB.`);
   }
 }
 

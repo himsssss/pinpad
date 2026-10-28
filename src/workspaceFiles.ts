@@ -16,7 +16,7 @@
  * Google Drive), and Pinpad follows: the new name becomes the board's or folder's name.
  */
 
-import type { Board, Doc, El, Folder } from './types';
+import type { Board, Doc, El, FileEl, Folder } from './types';
 import { deleteElements, projects, uid } from './doc';
 
 /** Parses an exported or stored workspace, throwing if it isn't one. */
@@ -187,14 +187,16 @@ export function layoutWorkspace(doc: Doc): Layout {
     const ext = /\.[a-z0-9]{1,8}$/i.exec(el.name)?.[0] ?? '';
     attachments.set(el.ref, take(dir, safeName(ext ? el.name.slice(0, -ext.length) : el.name), ext.toLowerCase()));
   };
-  const byRef = (a: El, b: El) => (a.type === 'file' && b.type === 'file' ? a.ref.localeCompare(b.ref) : 0);
-  for (const el of Object.values(doc.elements).sort(byRef)) {
+  // Copied cards share their file: which card places it mustn't depend on the order boards were read in.
+  const byRef = (a: FileEl, b: FileEl) => a.ref.localeCompare(b.ref) || a.id.localeCompare(b.id);
+  const fileCards = (els: El[]) => els.filter((e): e is FileEl => e.type === 'file').sort(byRef);
+  for (const el of fileCards(Object.values(doc.elements))) {
     const board = doc.boards[el.boardId];
     const project = board && projectOf(board);
     place(el, join(project ? projectDirs.get(project)! : '', FILES_DIR));
   }
   const waiting = [...(doc.trash ?? []).flatMap((t) => t.elements), ...(doc.templates ?? []).flatMap((t) => t.elements)];
-  for (const el of waiting.sort(byRef)) place(el, HOLDING_DIR);
+  for (const el of fileCards(waiting)) place(el, HOLDING_DIR);
 
   const files = new Map<string, string>();
   for (const [id, path] of paths) {

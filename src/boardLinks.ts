@@ -21,6 +21,21 @@ export function clearLinkFromUrl() {
   history.replaceState(null, '', location.pathname + location.search);
 }
 
+/** Copies the link; false when the browser wouldn't let it be copied. */
 export async function copyLink(target: LinkTarget) {
-  await navigator.clipboard.writeText(boardLink(target)).catch(() => {});
+  const text = boardLink(target);
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Older browsers and some embedded ones only copy what's selected on the page.
+    const field = document.createElement('textarea');
+    field.value = text;
+    field.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(field);
+    field.select();
+    const copied = document.execCommand('copy');
+    field.remove();
+    return copied;
+  }
 }

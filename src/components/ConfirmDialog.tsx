@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Info } from 'lucide-react';
 
 interface Ask {
   title: string;
@@ -9,6 +9,8 @@ interface Ask {
   alternative?: string;
   /** Red confirm button, for deleting. */
   danger?: boolean;
+  /** Only something to read: one button, no Cancel. */
+  info?: boolean;
   resolve: (answer: boolean | 'alternative') => void;
 }
 
@@ -17,6 +19,11 @@ let show: ((ask: Ask) => void) | null = null;
 /** Shows a warning and resolves true if the user confirms. */
 export function askConfirm(options: Omit<Ask, 'resolve' | 'alternative'>): Promise<boolean> {
   return new Promise((resolve) => (show ? show({ ...options, resolve: (a) => resolve(a === true) }) : resolve(confirm(`${options.title}\n\n${options.message}`))));
+}
+
+/** Tells the user something (a failure, say), with a single OK. */
+export function tell(title: string, message: string): Promise<void> {
+  return new Promise((resolve) => (show ? show({ title, message, confirm: 'OK', info: true, resolve: () => resolve() }) : (alert(`${title}\n\n${message}`), resolve())));
 }
 
 /** Like askConfirm, with a second choice: resolves 'confirm', 'alternative', or null when cancelled. */
@@ -58,11 +65,11 @@ export function ConfirmDialog() {
   return (
     <div className="search-backdrop confirm-backdrop" onPointerDown={() => answer(false)}>
       <div className="dialog confirm-dialog" role="alertdialog" aria-labelledby="confirm-title" aria-describedby="confirm-text" onPointerDown={(e) => e.stopPropagation()}>
-        <div className={`confirm-icon ${ask.danger ? 'danger' : ''}`}><AlertTriangle size={20} /></div>
+        <div className={`confirm-icon ${ask.danger ? 'danger' : ''}`}>{ask.info ? <Info size={20} /> : <AlertTriangle size={20} />}</div>
         <h2 id="confirm-title">{ask.title}</h2>
         <p id="confirm-text" className="dialog-text">{ask.message}</p>
         <div className="dialog-actions">
-          <button className="btn-secondary" onClick={() => answer(false)}>Cancel</button>
+          {!ask.info && <button className="btn-secondary" onClick={() => answer(false)}>Cancel</button>}
           {ask.alternative && <button className="btn-secondary" onClick={() => answer('alternative')}>{ask.alternative}</button>}
           <button ref={confirmRef} className={`btn-primary ${ask.danger ? 'danger' : ''}`} onClick={() => answer(true)}>{ask.confirm}</button>
         </div>

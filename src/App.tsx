@@ -11,7 +11,8 @@ import { TRASH, TrashPage } from './components/TrashPage';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { ShareDialog } from './components/ShareDialog';
-import { askConfirm } from './components/ConfirmDialog';
+import { Toast } from './components/Toast';
+import { tell } from './components/ConfirmDialog';
 import { clearLinkFromUrl, linkInUrl } from './boardLinks';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { CardMenu } from './components/CardMenu';
@@ -167,12 +168,10 @@ export function App() {
       const { doc } = getState();
       if (link.kind === 'board' && doc.boards[link.id]) return openBoard(link.id);
       if (link.kind === 'folder' && doc.folders[link.id]) return browse(link.id);
-      askConfirm({
-        title: `This ${link.kind} isn't in your boards`,
-        message:
-          'The link opens it for people who use the same boards: signed in to the same Google Drive (Sign in, top right), or using the same shared folder. Ask whoever sent it to send a copy instead.',
-        confirm: 'OK',
-      });
+      tell(
+        `This ${link.kind} isn't in your boards`,
+        'The link opens it for people who use the same boards: signed in to the same Google Drive (Sign in, top right), or using the same shared folder. Ask whoever sent it to send a copy instead.',
+      );
     };
     go();
     window.addEventListener('hashchange', go);
@@ -192,6 +191,7 @@ export function App() {
       <ContextMenu />
       <ConfirmDialog />
       <ShareDialog />
+      <Toast />
       <OpeningNote />
       <UpdatePrompt />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}

@@ -65,14 +65,18 @@ let loading: Promise<void> | null = null;
 /** When the last listing finished: one made a moment ago (say, to check for a workspace) is reused. */
 let loadedAt = 0;
 
+/** Counts resets, so a listing still under way for an account switched away from is dropped. */
+let generation = 0;
+
 /** Finds (or makes) the app folder and maps everything in it by path. */
 async function load() {
-  root = await (await graph('/special/approot?$select=id,name,webUrl')).json();
-  ids = new Map();
-  versions = new Map();
-  listing = [];
+  const mine = generation;
+  const app: Item = await (await graph('/special/approot?$select=id,name,webUrl')).json();
+  const found = new Map<string, string>();
+  const tags = new Map<string, string>();
+  const listed: Listed[] = [];
   // Folder by folder, a few at a time.
-  let level: [string, string][] = [['', root!.id]];
+  let level: [string, string][] = [['', app.id]];
   for (let depth = 0; level.length && depth < 10; depth++) {
     const next: [string, string][] = [];
     for (let i = 0; i < level.length; i += 6) {
@@ -83,15 +87,15 @@ async function load() {
             const page: { value: Item[]; '@odata.nextLink'?: string } = await (await graph(url)).json();
             for (const item of page.value) {
               const path = dir ? `${dir}/${item.name}` : item.name;
-              ids.set(path, item.id);
+              found.set(path, item.id);
               const version = item.cTag ?? item.lastModifiedDateTime;
-              if (version) versions.set(item.id, version);
+              if (version) tags.set(item.id, version);
               const dirItem = !!item.folder;
               if (dirItem) next.push([path, item.id]);
               // Files attached to cards are mapped (to find and move them) but never listed as boards.
               if (isAttachmentPath(path)) continue;
               if (dirItem || item.name.endsWith('.json')) {
-                listing.push({ path, modified: dirItem ? 0 : Date.parse(item.lastModifiedDateTime ?? '') || 0, dir: dirItem });
+                listed.push({ path, modified: dirItem ? 0 : Date.parse(item.lastModifiedDateTime ?? '') || 0, dir: dirItem });
               }
             }
             url = page['@odata.nextLink'] ?? null;
@@ -101,11 +105,17 @@ async function load() {
     }
     level = next;
   }
+  if (mine !== generation) return;
+  root = app;
+  ids = found;
+  versions = tags;
+  listing = listed;
 }
 
 function ready() {
-  loading ??= load().then(() => void (loadedAt = Date.now())).catch((err) => {
-    loading = null;
+  const mine = generation;
+  loading ??= load().then(() => void (mine === generation && (loadedAt = Date.now()))).catch((err) => {
+    if (mine === generation) loading = null;
     throw err;
   });
   return loading;
@@ -301,7 +311,8 @@ export const oneDriveStorage = {
 
   /** Lists OneDrive afresh, so files renamed, moved or deleted there since are seen. */
   async list(): Promise<Listed[]> {
-    if (!loading || Date.now() - loadedAt > 5000) oneDriveStorage.reset();
+    // A listing under way or just made is used as it is.
+    if (!loading || (loadedAt && Date.now() - loadedAt > 5000)) oneDriveStorage.reset();
     await ready();
     return listing;
   },
@@ -322,6 +333,7 @@ export const oneDriveStorage = {
 
   /** Forgets what's cached, so the next call lists OneDrive again (after switching accounts). */
   reset() {
+    generation++;
     root = null;
     ids = new Map();
     loading = null;

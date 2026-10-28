@@ -10,6 +10,7 @@ import { parseWorkspace } from '../workspaceFiles';
 import { importShareFile, isShareFile, pickImportFile } from '../shareFile';
 import { openShare } from './ShareDialog';
 import { AccountButton } from './AccountButton';
+import { askConfirm, tell } from './ConfirmDialog';
 import { StorageDialog } from './StorageDialog';
 import { boardPath, seedDoc } from '../doc';
 import { BoardIcon } from './BoardIcon';
@@ -21,7 +22,8 @@ function downloadJSON(doc: Doc) {
   a.href = URL.createObjectURL(blob);
   a.download = `pinpad-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
-  URL.revokeObjectURL(a.href);
+  // Safari and the Mac app start the download after this returns.
+  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 }
 
 function replaceDoc(doc: Doc) {
@@ -42,10 +44,26 @@ async function importFile() {
     const text = await file.text();
     if (isShareFile(text)) return void (await importShareFile(text));
     const doc = parseWorkspace(text);
-    if (confirm('Replace your workspace with this file? You can undo this.')) replaceDoc(doc);
+    const ok = await askConfirm({
+      title: 'Replace your boards with this backup?',
+      message: `Everything in your boards now is replaced by what's in “${file.name}”. You can undo this.`,
+      confirm: 'Replace',
+      danger: true,
+    });
+    if (ok) replaceDoc(doc);
   } catch (err) {
-    alert(`Couldn't import: ${(err as Error).message}`);
+    tell("Couldn't import that file", (err as Error).message);
   }
+}
+
+async function resetToDemo() {
+  const ok = await askConfirm({
+    title: 'Reset to the demo boards?',
+    message: 'Your boards are replaced by the demo ones. You can undo this.',
+    confirm: 'Reset',
+    danger: true,
+  });
+  if (ok) replaceDoc(seedDoc());
 }
 
 let showStorage: (() => void) | null = null;
@@ -98,7 +116,7 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
     try {
       await run();
     } catch (err) {
-      alert(`Couldn't export: ${(err as Error).message}`);
+      tell("Couldn't export", (err as Error).message);
     } finally {
       setExporting(false);
     }
@@ -212,7 +230,7 @@ export function Header({ onSearch, onShortcuts }: { onSearch: () => void; onShor
               <button onClick={() => { downloadJSON(getState().doc); setMenu(false); }}><Download size={14} /> Export workspace</button>
               <button onClick={() => { importFile(); setMenu(false); }}><Upload size={14} /> Import…</button>
               <button onClick={() => { onShortcuts(); setMenu(false); }}><Keyboard size={14} /> Keyboard shortcuts <kbd className="menu-kbd">?</kbd></button>
-              <button onClick={() => { if (confirm('Reset to the demo workspace? You can undo this.')) replaceDoc(seedDoc()); setMenu(false); }}>
+              <button onClick={() => { setMenu(false); resetToDemo(); }}>
                 <RotateCcw size={14} /> Reset to demo
               </button>
             </div>

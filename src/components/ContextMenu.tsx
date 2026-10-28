@@ -11,7 +11,14 @@ import {
 } from '../projectActions';
 import { askConfirm } from './ConfirmDialog';
 import { openShare } from './ShareDialog';
-import { copyLink } from '../boardLinks';
+import { copyLink, type LinkTarget } from '../boardLinks';
+import { notify } from './Toast';
+
+/** Copies a link and says so; where copying isn't allowed, Share shows the link to copy by hand. */
+async function copyAndSay(link: LinkTarget, project?: string) {
+  if (await copyLink(link)) notify('Link copied');
+  else openShare(project ? { kind: 'project', id: project } : { kind: 'folder', id: link.id });
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -73,7 +80,7 @@ export function folderMenu(folderId: string, where: Renaming['where']): MenuItem
     { label: 'New folder inside', icon: FolderPlus, onSelect: () => createFolder(folderId, where) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(folder.parentId, folderId, (to) => moveFolder(folderId, to || undefined)) },
     { label: 'Share…', icon: Share2, onSelect: () => openShare({ kind: 'folder', id: folderId }) },
-    { label: 'Copy link', icon: Link2, onSelect: () => copyLink({ kind: 'folder', id: folderId }) },
+    { label: 'Copy link', icon: Link2, onSelect: () => copyAndSay({ kind: 'folder', id: folderId }) },
     'sep',
     { label: 'Delete folder', icon: Trash2, danger: true, onSelect: () => confirmTrashFolder(folderId) },
   ];
@@ -90,7 +97,7 @@ export function projectMenu(boardId: string, where: Renaming['where']): MenuItem
     { label: 'Save as template', icon: LayoutTemplate, onSelect: () => saveAsTemplate(boardId) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(board.folderId, undefined, (to) => fileBoard(boardId, to)) },
     { label: 'Share…', icon: Share2, onSelect: () => openShare({ kind: 'project', id: boardId }) },
-    { label: 'Copy link', icon: Link2, onSelect: () => copyLink({ kind: 'board', id: boardId }) },
+    { label: 'Copy link', icon: Link2, onSelect: () => copyAndSay({ kind: 'board', id: boardId }, boardId) },
     'sep',
     { label: 'Delete project', icon: Trash2, danger: true, onSelect: () => confirmTrashProject(boardId) },
   ];

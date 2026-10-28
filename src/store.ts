@@ -27,6 +27,8 @@ export interface State {
   saveProgress: number | null;
   /** Set while a place is being opened (signing in, reading Google Drive), to say so on screen. */
   opening: string | null;
+  /** The storageError is because Google or Microsoft sign-in ran out: signing in again fixes it. */
+  signInNeeded: boolean;
 }
 
 let state: State;
@@ -49,6 +51,8 @@ export function useStore<T>(selector: (s: State) => T): T {
 }
 
 function setState(next: Partial<State>) {
+  // A new error (or none) replaces the old one's reason too.
+  if ('storageError' in next && !('signInNeeded' in next)) next = { ...next, signInNeeded: false };
   state = { ...state, ...next, canUndo: past.length > 0, canRedo: future.length > 0 };
   emit();
 }
@@ -286,6 +290,8 @@ let writing: Promise<unknown> = Promise.resolve();
 let writesPending = 0;
 /** The boards as loaded when saving to files was stopped; anything changed since isn't saved there. */
 let blockedDoc: Doc | null = null;
+/** Which place's copy (docKey) was open then: signing back in as someone else opens theirs instead. */
+let blockedKey = '';
 /**
  * On the website with Google Drive, the copy on this device is shown at once while Drive is
  * read (finishStart). Until then this holds that copy and nothing is saved to Drive, since
@@ -401,6 +407,7 @@ function writeFiles(doc: Doc) {
       setState({
         saveProgress: null,
         storageError: err instanceof SignInNeeded ? err.message : `Couldn't save to ${placeName()}: ${errorText(err)}`,
+        signInNeeded: err instanceof SignInNeeded && !(err instanceof FolderAccessNeeded),
       });
       return;
     }
@@ -422,9 +429,11 @@ function writeFiles(doc: Doc) {
  */
 export async function afterSignIn() {
   if (!fileBlocked) return retrySave();
-  if (backend === webFolderStorage) {
-    // Read the folder as on opening: edits made meanwhile stay unless it changed elsewhere.
-    webFolderStorage.reset();
+  const sameAccount = docKey() === blockedKey;
+  if (backend === webFolderStorage || (sameAccount && (backend === driveStorage || backend === oneDriveStorage))) {
+    // Read the storage as on opening: edits made meanwhile stay unless it changed elsewhere
+    // (and then they're one undo away).
+    (backend as typeof webFolderStorage).reset();
     fileBlocked = false;
     starting = blockedDoc ?? state.doc;
     setState({ storageError: null });
@@ -544,7 +553,8 @@ async function flush() {
 
 /** Whether some change hasn't reached storage yet (checked without waiting, for the website's leave warning). */
 function hasUnsavedNow() {
-  const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR);
+  // Boards that couldn't be opened only count once something was changed meanwhile (below).
+  const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR) && !fileBlocked;
   return !state.saved || persistTimer !== undefined || writesPending > 0 || !!error || (fileBlocked && state.doc !== blockedDoc) || (!!starting && state.doc !== starting) || uploadsPending();
 }
 
@@ -559,7 +569,7 @@ export async function unsavedReason(): Promise<string | null> {
     return `Your latest changes are only on this device: Pinpad couldn't open your boards in ${placeName()}, so it isn't saving there.`;
   }
   const error = state.storageError;
-  if (error && !error.startsWith(SYNC_ERROR)) return error;
+  if (error && !error.startsWith(SYNC_ERROR) && !fileBlocked) return error;
   if (uploadsPending()) await writeFiles(state.doc);
   if (uploadsPending()) return `Some attached files haven't been uploaded to ${placeName()} yet. They stay on this device and upload next time Pinpad is open.`;
   return null;
@@ -722,6 +732,7 @@ export async function initStore() {
   const own = await load<Doc>(docKey()).catch(() => undefined);
   let doc = own ?? (await load<Doc>('doc').catch(() => undefined));
   let storageError: string | null = null;
+  let blockError: unknown = null;
   backend = currentBackend();
   // Google Drive is a network away: open with this device's copy of it, and read Drive after.
   const quick = (backend === driveStorage || backend === oneDriveStorage || backend === webFolderStorage) && !!own?.boards?.[own.rootId];
@@ -736,6 +747,7 @@ export async function initStore() {
       }
     } catch (err) {
       fileBlocked = true;
+      blockError = err;
       storageError = openError(err);
     }
   }
@@ -770,8 +782,8 @@ export async function initStore() {
     window.addEventListener(
       'pointerdown',
       (e) => {
-        // Not from Storage location's own "Sign in again", which asks Google itself.
-        if (!usingDrive() || !webTokenExpiring() || (e.target as Element).closest?.('.dialog')) return;
+        // Not from the Storage location dialog's or account menu's own "Sign in again", which ask Google themselves.
+        if (!usingDrive() || !webTokenExpiring() || (e.target as Element).closest?.('.dialog, .account-menu')) return;
         renewWebToken().then((ok) => ok && afterSignIn().catch(() => {}));
       },
       true,
@@ -809,8 +821,13 @@ export async function initStore() {
     storageName: null,
     saveProgress: null,
     opening: null,
+    signInNeeded: false,
   };
-  if (fileBlocked) blockedDoc = doc;
+  if (fileBlocked) {
+    blockedDoc = doc;
+    blockedKey = docKey();
+    state.signInNeeded = needsSignIn(blockError);
+  }
   refreshStorageName().catch(() => {});
   saveLocal(doc);
   if (quick && backend) {
@@ -821,10 +838,14 @@ export async function initStore() {
   writeFiles(doc);
 }
 
+const needsSignIn = (err: unknown) => err instanceof SignInNeeded && !(err instanceof FolderAccessNeeded);
+
 function openError(err: unknown) {
   if (err instanceof FolderAccessNeeded) return `${err.message} Click anywhere to allow it; until then you're seeing the copy saved in this browser.`;
-  const reason = err instanceof SignInNeeded ? 'you need to sign in again' : errorText(err);
-  return `Couldn't open your boards in ${placeName()} (${reason}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until you open Storage location and fix this.`;
+  if (needsSignIn(err)) {
+    return `Your ${placeName()} sign-in has run out, so nothing is being saved there. Your changes are kept on this device and saved to ${placeName()} once you sign in again (your picture, top right).`;
+  }
+  return `Couldn't open your boards in ${placeName()} (${errorText(err)}). Showing the copy saved on this device; nothing will be saved to ${placeName()} until this is fixed (click the red dot by the logo).`;
 }
 
 /**
@@ -859,6 +880,7 @@ async function finishStart(from: Backend) {
     starting = null;
     fileBlocked = true;
     blockedDoc = shown;
-    setState({ storageError: openError(err) });
+    blockedKey = docKey();
+    setState({ storageError: openError(err), signInNeeded: needsSignIn(err) });
   }
 }

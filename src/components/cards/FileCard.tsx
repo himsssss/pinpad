@@ -22,6 +22,7 @@ function useFile(el: FileEl, kind: Kind, wanted: boolean) {
   const [url, setUrl] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [missing, setMissing] = useState(false);
+  const [tries, setTries] = useState(0);
   useEffect(() => {
     if (!wanted) return;
     let alive = true;
@@ -31,6 +32,7 @@ function useFile(el: FileEl, kind: Kind, wanted: boolean) {
         if (!alive) return;
         if (!b) return setMissing(true);
         made = URL.createObjectURL(new Blob([b], { type: safeType(kind, el.mime) }));
+        setMissing(false);
         setBlob(b);
         setUrl(made);
       })
@@ -39,8 +41,26 @@ function useFile(el: FileEl, kind: Kind, wanted: boolean) {
       alive = false;
       if (made) URL.revokeObjectURL(made);
     };
-  }, [el.ref, wanted]);
+  }, [el.ref, wanted, tries]);
+  useFileArrival(missing, () => setTries((t) => t + 1));
   return { url, blob, missing };
+}
+
+/**
+ * A file not here yet (still uploading from the computer it was added on) is looked for
+ * again now and then, and when Pinpad comes back into view.
+ */
+function useFileArrival(missing: boolean, retry: () => void) {
+  useEffect(() => {
+    if (!missing) return;
+    const again = () => document.visibilityState === 'visible' && retry();
+    const timer = window.setInterval(again, 30_000);
+    window.addEventListener('focus', again);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', again);
+    };
+  }, [missing]);
 }
 
 /** Saves the file with its own name. */

@@ -188,3 +188,19 @@ export function describePlace(place: Place, current: boolean) {
   if (webFoldersSupported()) return { name: 'Not saved to a folder yet', detail: 'Kept in this browser until you choose a folder' };
   return { name: 'This browser', detail: 'Saved only on this device' };
 }
+
+/**
+ * Signs in again as the account in use after its sign-in ran out, so its boards open where
+ * they were. The desktop apps renew it silently; when Google or Microsoft no longer accept
+ * that, they sign in from scratch.
+ */
+export async function signInAgain(service: 'google' | 'microsoft', account: string | null) {
+  const again = service === 'google' ? () => signIn() : () => microsoftSignIn();
+  if (!account) return void (await again());
+  try {
+    await (service === 'google' ? ensureAccount(account) : ensureMicrosoftAccount(account));
+  } catch (err) {
+    if (!window.pinpadNative) throw err;
+    await again();
+  }
+}

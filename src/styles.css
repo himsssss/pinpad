@@ -1130,6 +1130,9 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .signin-title { padding: 8px 10px 2px; font-size: 15px; font-weight: 600; color: var(--ink); }
 .signin-note { margin: 4px 10px 10px; font-size: 12.5px; line-height: 1.45; color: var(--slate); }
 .menu .signin-option { justify-content: center; gap: 10px; margin-top: 6px; padding: 10px; border: 1px solid var(--hairline-strong, #d9d8e6); font-weight: 600; text-align: center; }
+.avatar-badge.warn { background: #e8473f; color: #fff; }
+.menu .signin-again { margin: 4px 0 2px; border-color: transparent; background: var(--primary); color: var(--on-dark); }
+.menu .signin-again:hover:not(:disabled) { background: var(--primary-pressed); }
 .signin-sub { padding: 6px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--stone); }
 
 /* share */
@@ -1147,3 +1150,12 @@ body.is-dragging .resize-grip, body.is-connecting .resize-grip { opacity: 0; }
 .opening-note { position: fixed; left: 50%; top: calc(var(--gap) + 60px); transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 99px; background: var(--ink); color: #fff; font-size: 13.5px; box-shadow: 0 8px 24px rgba(5, 0, 56, .25); animation: update-in .2s ease-out; }
 .opening-spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .3); border-top-color: #9fe870; animation: opening-spin .8s linear infinite; }
 @keyframes opening-spin { to { transform: rotate(360deg); } }
+
+/* "Link copied" and the like, at the bottom of the screen for a moment. */
+.toast {
+  position: fixed; left: 50%; bottom: 24px; z-index: 300; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px;
+  border-radius: var(--r-full); background: var(--ink); color: #fff; font-size: 13.5px; font-weight: 500;
+  box-shadow: 0 8px 24px rgba(5, 0, 56, .18); animation: toast-in .18s ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }

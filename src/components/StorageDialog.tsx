@@ -5,6 +5,7 @@ import { allowWebFolder, chooseWebFolder, currentWebFolder, webFolderHasWorkspac
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
 import { oneDriveStorage } from '../oneDriveStorage';
+import { signInAgain as signInAgainAs } from '../places';
 import { DriveIcon } from './DriveIcon';
 import { OneDriveIcon } from './OneDriveIcon';
 import { microsoftAccount, microsoftAllowedHere, microsoftConfigured, microsoftSignIn, microsoftSignOut, microsoftWebOrigins } from '../microsoftAuth';
@@ -135,7 +136,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
 
   const signInAgain = () =>
     run(async () => {
-      await (onedrive ? microsoftSignIn() : signIn());
+      await (onedrive ? signInAgainAs('microsoft', msAccount) : signInAgainAs('google', account));
       await afterSignIn();
     });
 

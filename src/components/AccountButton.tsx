@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, LogOut, Plus } from 'lucide-react';
-import { cloudInUse, useStore } from '../store';
+import { AlertTriangle, Check, LogOut, Plus } from 'lucide-react';
+import { afterSignIn, cloudInUse, useStore } from '../store';
 import { googleAccount, googleAccounts, googleAllowedHere, googleConfigured } from '../googleAuth';
 import { microsoftAccount, microsoftAccounts, microsoftAllowedHere, microsoftConfigured } from '../microsoftAuth';
-import { addGoogleDrive, addOneDrive, listPlaces, openPlace, removePlace, type Place } from '../places';
+import { addGoogleDrive, addOneDrive, listPlaces, openPlace, removePlace, signInAgain as signInAgainAs, type Place } from '../places';
 import { askConfirm } from './ConfirmDialog';
 import { chooseForNewPlace } from './PlaceSwitcher';
 import { DriveIcon } from './DriveIcon';
@@ -25,11 +25,13 @@ function signedIn(): Account | null {
 const placeOf = ({ service, account }: Account): Place =>
   service === 'Google' ? { id: `drive:${account}`, kind: 'drive', account } : { id: `onedrive:${account}`, kind: 'onedrive', account };
 
-function Avatar({ account, size = 30 }: { account: Account; size?: number }) {
+function Avatar({ account, size = 30, warn = false }: { account: Account; size?: number; warn?: boolean }) {
   return (
     <span className="avatar" style={{ width: size, height: size, background: colorFor(account.account), fontSize: size * 0.45 }}>
       {account.account[0]?.toUpperCase()}
-      <span className="avatar-badge">{account.service === 'Google' ? <DriveIcon size={10} /> : <OneDriveIcon size={11} />}</span>
+      <span className={`avatar-badge ${warn ? 'warn' : ''}`}>
+        {warn ? <AlertTriangle size={9} strokeWidth={3} /> : account.service === 'Google' ? <DriveIcon size={10} /> : <OneDriveIcon size={11} />}
+      </span>
     </span>
   );
 }
@@ -43,6 +45,7 @@ export function AccountButton() {
   // Changes with every switch of place, so the button follows sign-ins made elsewhere too.
   useStore((s) => s.storageName);
   const opening = useStore((s) => s.opening);
+  const signInNeeded = useStore((s) => s.signInNeeded);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +105,13 @@ export function AccountButton() {
     });
   };
 
+  // The same account again (Google's popup confirms it), then saving carries on.
+  const signInAgain = (account: Account) =>
+    run('again', async () => {
+      await signInAgainAs(account.service === 'Google' ? 'google' : 'microsoft', account.account);
+      await afterSignIn();
+    });
+
   const others: Account[] = [
     ...(google ? googleAccounts().map((account) => ({ service: 'Google' as const, account })) : []),
     ...(microsoft ? microsoftAccounts().map((account) => ({ service: 'Microsoft' as const, account })) : []),
@@ -116,8 +126,8 @@ export function AccountButton() {
   return (
     <>
       {current ? (
-        <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={current.account}>
-          <Avatar account={current} />
+        <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={signInNeeded ? `Sign in again to keep saving to ${current.service === 'Google' ? 'Google Drive' : 'OneDrive'}` : current.account}>
+          <Avatar account={current} warn={signInNeeded} />
         </button>
       ) : (
         <button ref={ref} className="signin-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open}>Sign in</button>
@@ -130,9 +140,17 @@ export function AccountButton() {
                 <Avatar account={current} size={40} />
                 <div className="account-text">
                   <div className="account-email">{current.account}</div>
-                  <div className="account-where">Saving to {current.service === 'Google' ? 'Google Drive' : 'OneDrive'}</div>
+                  <div className="account-where">
+                    {signInNeeded ? 'Not saving: sign-in ran out' : `Saving to ${current.service === 'Google' ? 'Google Drive' : 'OneDrive'}`}
+                  </div>
                 </div>
               </div>
+              {signInNeeded && (
+                <button role="menuitem" className="signin-option signin-again" disabled={!!busy} onClick={() => signInAgain(current)}>
+                  {current.service === 'Google' ? <DriveIcon size={18} /> : <OneDriveIcon size={19} />}
+                  {busy === 'again' ? `Waiting for ${current.service}…` : 'Sign in again'}
+                </button>
+              )}
               {others.length > 0 && <div className="menu-sep" />}
               {others.map((a) => (
                 <button key={a.service + a.account} role="menuitem" disabled={!!busy} onClick={() => run(a.account, () => openPlace(placeOf(a), chooseForNewPlace))}>

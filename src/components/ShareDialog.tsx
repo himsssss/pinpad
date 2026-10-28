@@ -61,7 +61,10 @@ export function ShareDialog() {
   const info = describeCopy(target);
 
   const copy = async () => {
-    await copyLink(link);
+    if (!(await copyLink(link))) {
+      setNote("Your browser didn't allow copying: select the link and copy it yourself.");
+      return;
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
