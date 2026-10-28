@@ -3,7 +3,7 @@ import { ExternalLink, Music, Play, X } from 'lucide-react';
 import type { LinkEl } from '../../types';
 import { getState, mutate, setUI, useStore } from '../../store';
 import { hostname, normalizeUrl } from '../../doc';
-import { fetchPreview } from '../../linkPreview';
+import { fetchPreview, previewImproved } from '../../linkPreview';
 import { isSafeUrl } from '../../sanitize';
 import { iframeSrc, mediaEmbed, type MediaEmbed } from '../../media';
 import { Editable } from '../Editable';
@@ -13,7 +13,9 @@ const inFlight = new Set<string>();
 
 function usePreview(el: LinkEl) {
   useEffect(() => {
-    if (!el.url || el.previewFor === el.url || inFlight.has(el.id)) return;
+    // Fetched before without a picture: tried again where Pinterest's pictures now come through.
+    const stale = el.previewFor === el.url && !el.preview?.image && previewImproved(el.url);
+    if (!el.url || (el.previewFor === el.url && !stale) || inFlight.has(el.id)) return;
     inFlight.add(el.id);
     const url = el.url;
     fetchPreview(url).then((preview) => {
@@ -21,6 +23,7 @@ function usePreview(el: LinkEl) {
       const current = getState().doc.elements[el.id];
       if (current?.type !== 'link' || current.url !== url) return;
       // Not an undo step: the preview is derived from the URL, not an edit.
+      if (stale && !preview?.image) return;
       mutate((d) => {
         const l = d.elements[el.id] as LinkEl;
         l.preview = preview ?? undefined;

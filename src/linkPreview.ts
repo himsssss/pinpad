@@ -76,6 +76,63 @@ function parseMeta({ url, html }: PageResponse): LinkPreview {
   };
 }
 
+/** A Pinterest pin's id, or a board's "user/board", from its address (any country's Pinterest). */
+function pinterestTarget(url: string): { pin: string } | { board: string } | null {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)pinterest\.[a-z.]+$/i.test(u.hostname)) return null;
+    // Pins: /pin/123…/ or /pin/some-title--123…/
+    const pin = /^\/pin\/(?:[^/]*--)?(\d{6,})/.exec(u.pathname);
+    if (pin) return { pin: pin[1] };
+    const [user, board, ...rest] = u.pathname.split('/').filter(Boolean);
+    const reserved = /^(pin|search|ideas|today|settings|business|_|resource|oauth|login|explore)$/i;
+    if (user && board && !rest.length && !reserved.test(user) && !/^(pins|_saved|_created|boards)$/i.test(board)) return { board: `${user}/${board}` };
+  } catch {
+    // Not a URL.
+  }
+  return null;
+}
+
+type PinImages = Record<string, { url: string; width: number }>;
+const biggest = (images?: PinImages) => Object.values(images ?? {}).sort((a, b) => b.width - a.width)[0]?.url;
+
+/**
+ * Pinterest pins and boards, from Pinterest's widget API, which (unlike its pages) any site
+ * may read: so they get their picture on the website too, not only in the desktop apps.
+ */
+async function pinterest(url: string): Promise<LinkPreview | null> {
+  const target = pinterestTarget(url);
+  if (!target) return null;
+  const api = 'https://widgets.pinterest.com/v3/pidgets';
+  if ('pin' in target) {
+    type Pin = { description?: string; images?: PinImages; board?: { name?: string }; pinner?: { full_name?: string }; rich_metadata?: { title?: string } };
+    const res = await json<{ data?: Pin[] }>(`${api}/pins/info/?pin_ids=${target.pin}`);
+    const pin = res?.data?.[0];
+    if (!pin) return null;
+    const text = pin.description?.trim();
+    return {
+      title: pin.rich_metadata?.title?.trim() || (text && text.length <= 100 ? text : undefined) || pin.board?.name || 'Pinterest pin',
+      description: text && text !== pin.rich_metadata?.title ? text : undefined,
+      image: biggest(pin.images),
+      siteName: pin.pinner?.full_name ? `Pinterest · ${pin.pinner.full_name}` : 'Pinterest',
+    };
+  }
+  type Board = { board?: { name?: string; description?: string; image_thumbnail_url?: string; pin_count?: number }; pins?: { images?: PinImages }[]; user?: { full_name?: string } };
+  const res = await json<{ data?: Board }>(`${api}/boards/${target.board}/pins/`);
+  const board = res?.data?.board;
+  if (!board) return null;
+  return {
+    title: board.name,
+    description: board.description?.trim() || (board.pin_count ? `${board.pin_count} pins` : undefined),
+    // The board's own thumbnail is tiny; its first pin's picture reads better on a card.
+    image: biggest(res.data!.pins?.[0]?.images) ?? board.image_thumbnail_url,
+    siteName: res.data!.user?.full_name ? `Pinterest · ${res.data!.user.full_name}` : 'Pinterest',
+  };
+}
+
+/** Links whose earlier preview came out without a picture, but which can have one now. */
+export const previewImproved = (url: string) => !!pinterestTarget(url);
+
 export async function fetchPreview(url: string): Promise<LinkPreview | null> {
   const yt = youtubeId(url);
   if (yt) {
@@ -103,6 +160,8 @@ export async function fetchPreview(url: string): Promise<LinkPreview | null> {
     const o = await json<{ title?: string; thumbnail_url?: string; author_name?: string }>(audioOembed[1] + encodeURIComponent(url));
     if (o) return { title: o.title, image: o.thumbnail_url, siteName: o.author_name ? `${audioOembed[0]} · ${o.author_name}` : audioOembed[0] };
   }
+  const pin = await pinterest(url);
+  if (pin) return pin;
   // Direct media files have no page to read; their file name is the best title.
   const file = url.match(/\/([^/?#]+\.(?:mp4|m4v|webm|ogv|mov|mp3|m4a|aac|wav|oga|ogg|flac|opus))(?:[?#]|$)/i);
   if (file) return { title: decodeURIComponent(file[1]) };
