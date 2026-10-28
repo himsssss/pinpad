@@ -25,6 +25,8 @@ export interface State {
   storageName: string | null;
   /** How far the save under way has got (0–1), when the storage reports it; null otherwise. */
   saveProgress: number | null;
+  /** Set while a place is being opened (signing in, reading Google Drive), to say so on screen. */
+  opening: string | null;
 }
 
 let state: State;
@@ -563,6 +565,9 @@ export async function unsavedReason(): Promise<string | null> {
   return null;
 }
 
+/** Says on screen that a place is being opened (null when done). */
+export const setOpening = (opening: string | null) => setState({ opening });
+
 /** Resolves once the boards shown are the saved ones (after reading Google Drive, say). */
 export const whenOpened = () => startup;
 
@@ -627,7 +632,9 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   const previous = target.kind === 'folder' && native ? await native.location() : null;
   if (target.kind === 'folder') await native?.use(target.folder);
   const cloud = target.kind === 'drive' || target.kind === 'onedrive' ? target.kind : null;
-  if (cloud) cloudStorage(cloud).reset();
+  // Opening keeps the listing just made to see whether there's a workspace there (it's
+  // listed afresh anyway once a few seconds old).
+  if (cloud && keep !== 'open') cloudStorage(cloud).reset();
   if (target.kind === 'webfolder') setCurrentWebFolder(target);
   setMode(cloud ?? (target.kind === 'webfolder' ? 'folder' : null));
   backend = currentBackend();
@@ -665,6 +672,18 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     await saveLocal(state.doc);
     await writeFiles(state.doc);
     return;
+  }
+  // Opened here before: its copy on this device shows at once, and the storage is read just
+  // after (finishStart), as when Pinpad starts.
+  if (cloud || target.kind === 'webfolder') {
+    const own = await load<Doc>(docKey()).catch(() => undefined);
+    if (own?.boards?.[own.rootId]) {
+      onDisk = nothingOnDisk();
+      showDoc(own);
+      starting = own;
+      startup = finishStart(backend);
+      return;
+    }
   }
   let found: Awaited<ReturnType<typeof readFiles>>;
   try {
@@ -789,6 +808,7 @@ export async function initStore() {
     storageError,
     storageName: null,
     saveProgress: null,
+    opening: null,
   };
   if (fileBlocked) blockedDoc = doc;
   refreshStorageName().catch(() => {});

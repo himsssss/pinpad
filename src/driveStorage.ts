@@ -103,6 +103,8 @@ let listing: Listed[] = [];
 /** Drive file id to its last change time, as listed (or as returned by a save). */
 let changed = new Map<string, string>();
 let loading: Promise<void> | null = null;
+/** When the last listing finished: one made a moment ago (say, to check for a workspace) is reused. */
+let loadedAt = 0;
 
 /** Finds (or creates) the Pinpad folder and maps every file in it by path. */
 async function load() {
@@ -137,7 +139,7 @@ async function load() {
 }
 
 function ready() {
-  loading ??= load().catch((err) => {
+  loading ??= load().then(() => void (loadedAt = Date.now())).catch((err) => {
     loading = null;
     throw err;
   });
@@ -222,10 +224,10 @@ export const driveStorage = {
   async read(paths: string[]): Promise<Record<string, string | null>> {
     await ready();
     const out: Record<string, string | null> = {};
-    // A few downloads at a time keeps large workspaces quick without tripping rate limits.
-    for (let i = 0; i < paths.length; i += 8) {
+    // A dozen downloads at a time keeps large workspaces quick without tripping rate limits.
+    for (let i = 0; i < paths.length; i += 12) {
       await Promise.all(
-        paths.slice(i, i + 8).map(async (path) => {
+        paths.slice(i, i + 12).map(async (path) => {
           const id = ids.get(path);
           if (!id) return void (out[path] = null);
           const modified = changed.get(id);
@@ -304,7 +306,7 @@ export const driveStorage = {
 
   /** Lists Drive afresh, so files renamed, moved or deleted there since are seen. */
   async list(): Promise<Listed[]> {
-    driveStorage.reset();
+    if (!loading || Date.now() - loadedAt > 5000) driveStorage.reset();
     await ready();
     return listing;
   },
@@ -330,5 +332,6 @@ export const driveStorage = {
     rootName = null;
     ids = new Map();
     loading = null;
+    loadedAt = 0;
   },
 };

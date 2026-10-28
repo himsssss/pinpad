@@ -62,6 +62,8 @@ let ids = new Map<string, string>();
 let versions = new Map<string, string>();
 let listing: Listed[] = [];
 let loading: Promise<void> | null = null;
+/** When the last listing finished: one made a moment ago (say, to check for a workspace) is reused. */
+let loadedAt = 0;
 
 /** Finds (or makes) the app folder and maps everything in it by path. */
 async function load() {
@@ -102,7 +104,7 @@ async function load() {
 }
 
 function ready() {
-  loading ??= load().catch((err) => {
+  loading ??= load().then(() => void (loadedAt = Date.now())).catch((err) => {
     loading = null;
     throw err;
   });
@@ -299,7 +301,7 @@ export const oneDriveStorage = {
 
   /** Lists OneDrive afresh, so files renamed, moved or deleted there since are seen. */
   async list(): Promise<Listed[]> {
-    oneDriveStorage.reset();
+    if (!loading || Date.now() - loadedAt > 5000) oneDriveStorage.reset();
     await ready();
     return listing;
   },
@@ -323,5 +325,6 @@ export const oneDriveStorage = {
     root = null;
     ids = new Map();
     loading = null;
+    loadedAt = 0;
   },
 };

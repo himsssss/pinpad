@@ -21,6 +21,17 @@ import { addElementAtCenter } from './actions';
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
 
+/** "Opening your Google Drive…" while a place is being opened, so it never looks stuck. */
+function OpeningNote() {
+  const opening = useStore((s) => s.opening);
+  if (!opening) return null;
+  return (
+    <div className="opening-note" role="status">
+      <span className="opening-spinner" aria-hidden="true" /> {opening}
+    </div>
+  );
+}
+
 export function App() {
   const [searching, setSearching] = useState(false);
   const [shortcuts, setShortcuts] = useState(false);
@@ -181,6 +192,7 @@ export function App() {
       <ContextMenu />
       <ConfirmDialog />
       <ShareDialog />
+      <OpeningNote />
       <UpdatePrompt />
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}
     </div>

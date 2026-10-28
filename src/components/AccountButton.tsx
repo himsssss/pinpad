@@ -42,6 +42,7 @@ function Avatar({ account, size = 30 }: { account: Account; size?: number }) {
 export function AccountButton() {
   // Changes with every switch of place, so the button follows sign-ins made elsewhere too.
   useStore((s) => s.storageName);
+  const opening = useStore((s) => s.opening);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +66,11 @@ export function AccountButton() {
       window.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // Signed in: the menu gives way to "Opening your Google Drive…".
+  useEffect(() => {
+    if (opening) setOpen(false);
+  }, [opening]);
 
   if (!google && !microsoft) return null;
 

@@ -4,7 +4,7 @@
  * browser (website). One is open at a time and each has its own folders and projects.
  */
 
-import { browserHasBoards, cloudInUse, flushNow, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
+import { browserHasBoards, cloudInUse, flushNow, setOpening, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
 import { chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderHasWorkspace, webFolders, webFoldersSupported } from './webFolderStorage';
 import { nativeStorage } from './native';
 import { driveStorage } from './driveStorage';
@@ -78,6 +78,16 @@ export type NewPlaceChoice = (placeName: string) => Promise<'fresh' | 'replace' 
 
 /** Opens a place. Called from a click (the website may need Google's popup). */
 export async function openPlace(place: Place, choose: NewPlaceChoice) {
+  const cloud = place.kind === 'drive' ? 'Google Drive' : place.kind === 'onedrive' ? 'OneDrive' : null;
+  if (cloud) setOpening(`Opening your ${cloud}…`);
+  try {
+    await open(place, choose);
+  } finally {
+    if (cloud) setOpening(null);
+  }
+}
+
+async function open(place: Place, choose: NewPlaceChoice) {
   // Unsaved changes go to the place they were made in, before anything switches.
   await flushNow();
   if (place.kind === 'drive') {
@@ -85,6 +95,7 @@ export async function openPlace(place: Place, choose: NewPlaceChoice) {
     useAccount(place.account);
     driveStorage.reset();
     if (await driveStorage.hasWorkspace()) return switchStorage({ kind: 'drive' }, 'open');
+    setOpening(null);
     const keep = await choose('this Google Drive');
     if (keep) await switchStorage({ kind: 'drive' }, keep);
     return;
@@ -94,6 +105,7 @@ export async function openPlace(place: Place, choose: NewPlaceChoice) {
     useMicrosoftAccount(place.account);
     oneDriveStorage.reset();
     if (await oneDriveStorage.hasWorkspace()) return switchStorage({ kind: 'onedrive' }, 'open');
+    setOpening(null);
     const keep = await choose('this OneDrive');
     if (keep) await switchStorage({ kind: 'onedrive' }, keep);
     return;
