@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initStore } from './store';
 import { App } from './App';
+import { SignInGate } from './components/SignInPage';
 import { registerServiceWorker } from './serviceWorker';
 import '@fontsource-variable/dm-sans/index.css';
 import './styles.css';
@@ -13,7 +14,9 @@ if (import.meta.env.PROD && /^https?:$/.test(location.protocol) && !window.pinpa
 initStore().then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App />
+      <SignInGate>
+        <App />
+      </SignInGate>
     </StrictMode>,
   );
 });

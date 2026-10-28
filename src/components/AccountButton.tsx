@@ -1,17 +1,15 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { cloudInUse, useStore } from '../store';
 import { googleAccount } from '../googleAuth';
 import { microsoftAccount } from '../microsoftAuth';
 import { openPlace, rememberOpenPlace } from '../places';
 import {
-  accountsConfigured, createAccount, onAccountChange, pinpadAccount, rememberedStorage, sendPasswordReset, signInWithPassword,
-  signOutOfPinpad, type RememberedStorage,
+  accountsConfigured, onAccountChange, pinpadAccount, rememberedStorage, signOutOfPinpad, type RememberedStorage,
 } from '../pinpadAccount';
 import { chooseForNewPlace } from './PlaceSwitcher';
 import { DriveIcon } from './DriveIcon';
-import { PinpadMark } from './PinpadMark';
 import { OneDriveIcon } from './OneDriveIcon';
 
 const COLORS = ['#7c5cff', '#2f6fed', '#17a34a', '#e9438f', '#f06b1f', '#0e9488', '#c026d3'];
@@ -35,7 +33,7 @@ function isOpen(storage: RememberedStorage) {
 const serviceName = (storage: RememberedStorage) => (storage.kind === 'drive' ? 'Google Drive' : 'OneDrive');
 
 /**
- * Sign in, at the top right: a Pinpad account, with an email and a password. It doesn't move
+ * The Pinpad account, at the top right (signing in is the page before the app). It doesn't move
  * the boards (where they're kept is chosen from the logo's menu); it remembers which Google
  * Drive or OneDrive they're in, and offers to open it on a computer that doesn't have it open.
  */
@@ -44,13 +42,8 @@ export function AccountButton() {
   const storageName = useStore((s) => s.storageName);
   const opening = useStore((s) => s.opening);
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<'signin' | 'create' | 'reset'>('signin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [remembered, setRemembered] = useState<RememberedStorage | null>(null);
   const [at, setAt] = useState({ right: 0, top: 0 });
   const ref = useRef<HTMLButtonElement>(null);
@@ -87,36 +80,14 @@ export function AccountButton() {
     return () => void (alive = false);
   }, [account?.uid, open]);
 
-  if (!accountsConfigured()) return null;
+  // Signed out, the sign-in page (SignInPage) stands in for the whole app.
+  if (!accountsConfigured() || !account) return null;
 
   const toggle = () => {
     const r = ref.current!.getBoundingClientRect();
     setAt({ right: window.innerWidth - r.right, top: r.bottom + 8 });
     setError(null);
-    setNote(null);
     setOpen((o) => !o);
-  };
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    setNote(null);
-    try {
-      if (mode === 'reset') {
-        await sendPasswordReset(email);
-        setNote(`If there's a Pinpad account for ${email.trim()}, an email with a link to choose a new password is on its way.`);
-        setMode('signin');
-      } else {
-        await (mode === 'create' ? createAccount(email, password) : signInWithPassword(email, password));
-        setPassword('');
-        setMode('signin');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
   };
 
   const openRemembered = async (storage: RememberedStorage) => {
@@ -136,100 +107,31 @@ export function AccountButton() {
 
   return (
     <>
-      {account ? (
-        <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={account.email}>
-          <Avatar email={account.email} />
-        </button>
-      ) : (
-        <button ref={ref} className="signin-btn" onClick={toggle} aria-haspopup="dialog" aria-expanded={open}>Sign in</button>
-      )}
+      <button ref={ref} className="account-btn" onClick={toggle} aria-haspopup="menu" aria-expanded={open} title={account.email}>
+        <Avatar email={account.email} />
+      </button>
       {open && createPortal(
-        <div ref={menuRef} className="menu account-menu" role={account ? 'menu' : 'dialog'} aria-label={account ? 'Account' : 'Sign in'} style={{ right: at.right, top: at.top }}>
-          {account ? (
-            <>
-              <div className="account-head">
-                <Avatar email={account.email} size={40} />
-                <div className="account-text">
-                  <div className="account-email">{account.email}</div>
-                  <div className="account-where">Boards saved in {where}</div>
-                </div>
-              </div>
-              {remembered && !isOpen(remembered) && (
-                <div className="account-suggest">
-                  <span>Your boards are in {serviceName(remembered)} ({remembered.account}).</span>
-                  <button className="signin-option signin-again" disabled={busy} onClick={() => openRemembered(remembered)}>
-                    {remembered.kind === 'drive' ? <DriveIcon size={18} /> : <OneDriveIcon size={19} />} {busy ? 'Opening…' : 'Open them here'}
-                  </button>
-                </div>
-              )}
-              <div className="menu-sep" />
-              <button role="menuitem" disabled={busy} onClick={() => (signOutOfPinpad(), setOpen(false))}>
-                <LogOut size={14} /> Sign out of Pinpad
+        <div ref={menuRef} className="menu account-menu" role="menu" aria-label="Account" style={{ right: at.right, top: at.top }}>
+          <div className="account-head">
+            <Avatar email={account.email} size={40} />
+            <div className="account-text">
+              <div className="account-email">{account.email}</div>
+              <div className="account-where">Boards saved in {where}</div>
+            </div>
+          </div>
+          {remembered && !isOpen(remembered) && (
+            <div className="account-suggest">
+              <span>Your boards are in {serviceName(remembered)} ({remembered.account}).</span>
+              <button className="signin-option signin-again" disabled={busy} onClick={() => openRemembered(remembered)}>
+                {remembered.kind === 'drive' ? <DriveIcon size={18} /> : <OneDriveIcon size={19} />} {busy ? 'Opening…' : 'Open them here'}
               </button>
-            </>
-          ) : (
-            <form className="signin-form" onSubmit={submit}>
-              <div className="signin-head">
-                <PinpadMark size={36} />
-                <div className="signin-title">{mode === 'create' ? 'Create your account' : mode === 'reset' ? 'Reset your password' : 'Sign in to Pinpad'}</div>
-                <p className="signin-note">
-                  {mode === 'reset'
-                    ? 'We’ll email you a link to choose a new one.'
-                    : 'Open your boards on any computer.'}
-                </p>
-              </div>
-              <label className="signin-field">
-                <span>Email</span>
-                <input type="email" autoComplete="username" required autoFocus placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </label>
-              {mode !== 'reset' && (
-                <div className="signin-field">
-                  <span className="signin-label-row">
-                    <label htmlFor="signin-password">Password</label>
-                    {mode === 'signin' && (
-                      <button type="button" className="signin-link" onClick={() => (setMode('reset'), setError(null))}>Forgot?</button>
-                    )}
-                  </span>
-                  <span className="signin-password">
-                    <input
-                      id="signin-password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
-                      required
-                      minLength={mode === 'create' ? 6 : undefined}
-                      placeholder={mode === 'create' ? 'At least 6 characters' : undefined}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="signin-eye"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      title={showPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </span>
-                </div>
-              )}
-              {error && <div className="place-menu-error" role="alert">{error}</div>}
-              {note && <div className="signin-sent" role="status">{note}</div>}
-              <button type="submit" className="btn-primary signin-submit" disabled={busy}>
-                {busy ? 'Just a moment…' : mode === 'create' ? 'Create account' : mode === 'reset' ? 'Send reset link' : 'Sign in'}
-              </button>
-              <div className="signin-foot">
-                {mode === 'signin' ? (
-                  <>New to Pinpad? <button type="button" className="signin-link" onClick={() => (setMode('create'), setError(null))}>Create an account</button></>
-                ) : mode === 'create' ? (
-                  <>Have an account? <button type="button" className="signin-link" onClick={() => (setMode('signin'), setError(null))}>Sign in</button></>
-                ) : (
-                  <button type="button" className="signin-link" onClick={() => (setMode('signin'), setError(null))}>Back to sign in</button>
-                )}
-              </div>
-              <p className="signin-where">Choose where boards are saved from the logo.</p>
-            </form>
+            </div>
           )}
+          {error && <div className="place-menu-error" role="alert">{error}</div>}
+          <div className="menu-sep" />
+          <button role="menuitem" disabled={busy} onClick={() => (signOutOfPinpad(), setOpen(false))}>
+            <LogOut size={14} /> Sign out of Pinpad
+          </button>
         </div>,
         document.body,
       )}
