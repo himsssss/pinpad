@@ -131,35 +131,6 @@ export function addTemplateToBoard(templateId: string) {
   mutate((d) => copyTemplate(d, template, ui.boardId, dx, dy));
 }
 
-/**
- * Adds copies of projects someone shared (sharedView.ts, "Save a copy") as new projects,
- * in a folder of their own when a whole folder was shared. Returns the first one's id.
- */
-export function importCopies(copies: SavedTemplate[], folderName: string | null) {
-  const ids: string[] = [];
-  mutate((d) => {
-    let folderId: string | undefined;
-    if (folderName) {
-      folderId = uid();
-      d.folders[folderId] = { id: folderId, name: folderName, order: Math.max(0, ...Object.values(d.folders).map((f) => f.order)) + 1 };
-    }
-    const onHome = Object.values(d.elements).filter((e) => e.boardId === d.rootId && !e.columnId && e.type !== 'line');
-    let x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
-    for (const copy of copies) {
-      const { el, board } = createElement('board', d.rootId, x, 80, maxZ(d) + 1);
-      if (!board) continue;
-      const look = copy.boards.find((b) => b.id === copy.rootId);
-      Object.assign(board, { title: copy.name, folderId, ...(look ? { color: look.color, icon: look.icon } : {}) });
-      d.elements[el.id] = el;
-      d.boards[board.id] = board;
-      copyTemplate(d, copy, board.id, 0, 0);
-      ids.push(board.id);
-      x += 140;
-    }
-  });
-  return ids[0];
-}
-
 export function deleteTemplate(templateId: string) {
   mutate((d) => {
     d.templates = (d.templates ?? []).filter((t) => t.id !== templateId);

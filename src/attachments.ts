@@ -11,8 +11,7 @@ import { nativeStorage } from './native';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
 import { webFolderStorage } from './webFolderStorage';
-import { attachmentLocation, retrySave, sharedFileId, usingDrive, usingOneDrive, usingWebFolder } from './store';
-import { sharedAttachment } from './sharedView';
+import { attachmentLocation, retrySave, usingDrive, usingOneDrive, usingWebFolder } from './store';
 import { uid } from './doc';
 import { legacyAttachmentPath } from './workspaceFiles';
 
@@ -114,9 +113,6 @@ export async function addAttachment(file: File) {
 export async function getAttachment(ref: string, name: string, type: string): Promise<Blob | null> {
   const cached = await load<Blob>(cacheKey(ref)).catch(() => undefined);
   if (cached) return cached;
-  // A shared link being viewed: its files come from the owner's Drive.
-  const sharedId = sharedFileId(ref);
-  if (sharedId !== undefined) return sharedId ? sharedAttachment(sharedId) : null;
   const where = attachmentLocation(ref);
   let blob = where ? await readFromStorage(where, type) : null;
   if (!blob && where !== legacyAttachmentPath(ref, name)) blob = await readFromStorage(legacyAttachmentPath(ref, name), type).catch(() => null);

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Copy, Folder, FolderInput, FolderOpen, FolderPlus, Home, LayoutTemplate, Pencil, Plus, Share2, Trash2,
+  ChevronLeft, ChevronRight, Copy, Folder, FolderInput, FolderOpen, FolderPlus, Home, LayoutTemplate, Pencil, Plus, Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import { browse, getState, openBoard, setUI } from '../store';
@@ -10,7 +10,6 @@ import {
   trashProject,
 } from '../projectActions';
 import { askConfirm } from './ConfirmDialog';
-import { openShare } from './ShareDialog';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -64,7 +63,6 @@ const moveTargets = (current: string | undefined, exclude: string | undefined, m
 export function folderMenu(folderId: string, where: Renaming['where']): MenuItem[] {
   const folder = getState().doc.folders[folderId];
   if (!folder) return [];
-  if (getState().viewing) return [{ label: 'Open', icon: FolderOpen, onSelect: () => browse(folderId) }];
   return [
     { label: 'Open', icon: FolderOpen, onSelect: () => browse(folderId) },
     { label: 'Rename', icon: Pencil, onSelect: () => setUI({ renaming: { id: folderId, where } }) },
@@ -72,7 +70,6 @@ export function folderMenu(folderId: string, where: Renaming['where']): MenuItem
     { label: 'New project here', icon: Plus, onSelect: () => newProject(folderId) },
     { label: 'New folder inside', icon: FolderPlus, onSelect: () => createFolder(folderId, where) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(folder.parentId, folderId, (to) => moveFolder(folderId, to || undefined)) },
-    { label: 'Share…', icon: Share2, onSelect: () => openShare({ kind: 'folder', id: folderId }) },
     'sep',
     { label: 'Delete folder', icon: Trash2, danger: true, onSelect: () => confirmTrashFolder(folderId) },
   ];
@@ -82,14 +79,12 @@ export function folderMenu(folderId: string, where: Renaming['where']): MenuItem
 export function projectMenu(boardId: string, where: Renaming['where']): MenuItem[] {
   const board = getState().doc.boards[boardId];
   if (!board) return [];
-  if (getState().viewing) return [{ label: 'Open', icon: FolderOpen, onSelect: () => openBoard(boardId) }];
   return [
     { label: 'Open', icon: FolderOpen, onSelect: () => openBoard(boardId) },
     { label: 'Rename', icon: Pencil, onSelect: () => setUI({ renaming: { id: boardId, where } }) },
     { label: 'Duplicate', icon: Copy, onSelect: () => duplicateProject(boardId) },
     { label: 'Save as template', icon: LayoutTemplate, onSelect: () => saveAsTemplate(boardId) },
     { label: 'Move to', icon: FolderInput, items: moveTargets(board.folderId, undefined, (to) => fileBoard(boardId, to)) },
-    { label: 'Share…', icon: Share2, onSelect: () => openShare({ kind: 'project', id: boardId }) },
     'sep',
     { label: 'Delete project', icon: Trash2, danger: true, onSelect: () => confirmTrashProject(boardId) },
   ];
@@ -97,7 +92,6 @@ export function projectMenu(boardId: string, where: Renaming['where']): MenuItem
 
 /** Right-click menu for empty space in a folder (or the top level). */
 export function placeMenu(folderId: string | undefined, where: Renaming['where']): MenuItem[] {
-  if (getState().viewing) return [];
   return [
     { label: 'New project', icon: Plus, onSelect: () => newProject(folderId) },
     { label: folderId ? 'New folder inside' : 'New folder', icon: FolderPlus, onSelect: () => createFolder(folderId, where) },
