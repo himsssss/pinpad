@@ -113,6 +113,43 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
       await afterSignIn();
     });
 
+  // Folders on this computer are listed together, as in the sidebar's Folders section.
+  const isFolder = (p: Place) => p.kind === 'folder' || p.kind === 'webfolder';
+  const folders = list?.places.filter(isFolder) ?? [];
+  const others = list?.places.filter((p) => !isFolder(p)) ?? [];
+  const row = (place: Place) => {
+    const current = place.id === list?.current;
+    const { name, detail } = describePlace(place, current);
+    return (
+      <div key={place.id} className={`place-row ${current ? 'current' : ''}`}>
+        <button
+          role="menuitemradio"
+          aria-checked={current}
+          disabled={busy}
+          onClick={() => (current ? (browse(null), setOpen(false)) : run(() => openPlace(place, chooseForNewPlace)))}
+          title={current ? 'Show all its folders and projects' : `Switch to ${name}`}
+        >
+          <span className="place-icon"><PlaceIcon place={place} /></span>
+          <span className="place-text">
+            <span className="place-name">{name}</span>
+            <span className="place-detail">{detail}</span>
+          </span>
+          {current && <Check size={16} className="place-check" />}
+        </button>
+        {(place.kind === 'drive' || place.kind === 'onedrive') && (
+          <button className="place-remove" disabled={busy} aria-label={`Disconnect ${detail}`} title={`Disconnect this ${place.kind === 'drive' ? 'Google' : 'Microsoft'} account`} onClick={() => remove(place)}>
+            <LogOut size={14} /> <span>Disconnect</span>
+          </button>
+        )}
+        {((place.kind === 'folder' && !place.isDefault) || place.kind === 'webfolder') && !current && (
+          <button className="place-remove" disabled={busy} aria-label={`Remove ${name}`} title="Remove from list (the folder stays)" onClick={() => remove(place)}>
+            <X size={14} />
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="place-switcher" ref={ref}>
       <button
@@ -143,40 +180,16 @@ export function PlaceSwitcher({ compact = false, onSettings }: { compact?: boole
               <button className="btn-primary" disabled={busy} onClick={renew}>{busy ? 'Waiting…' : 'Sign in again'}</button>
             </div>
           )}
-          <div className="place-menu-title">Your places</div>
+          {!list && <div className="place-menu-title">Your places</div>}
           {!list && <div className="place-menu-note">Loading…</div>}
-          {list?.places.map((place) => {
-            const current = place.id === list.current;
-            const { name, detail } = describePlace(place, current);
-            return (
-              <div key={place.id} className={`place-row ${current ? 'current' : ''}`}>
-                <button
-                  role="menuitemradio"
-                  aria-checked={current}
-                  disabled={busy}
-                  onClick={() => (current ? (browse(null), setOpen(false)) : run(() => openPlace(place, chooseForNewPlace)))}
-                  title={current ? 'Show all its folders and projects' : `Switch to ${name}`}
-                >
-                  <span className="place-icon"><PlaceIcon place={place} /></span>
-                  <span className="place-text">
-                    <span className="place-name">{name}</span>
-                    <span className="place-detail">{detail}</span>
-                  </span>
-                  {current && <Check size={16} className="place-check" />}
-                </button>
-                {(place.kind === 'drive' || place.kind === 'onedrive') && (
-                  <button className="place-remove" disabled={busy} aria-label={`Disconnect ${detail}`} title={`Disconnect this ${place.kind === 'drive' ? 'Google' : 'Microsoft'} account`} onClick={() => remove(place)}>
-                    <LogOut size={14} /> <span>Disconnect</span>
-                  </button>
-                )}
-                {((place.kind === 'folder' && !place.isDefault) || place.kind === 'webfolder') && !current && (
-                  <button className="place-remove" disabled={busy} aria-label={`Remove ${name}`} title="Remove from list (the folder stays)" onClick={() => remove(place)}>
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {others.length > 0 && <div className="place-menu-title">Your places</div>}
+          {others.map(row)}
+          {folders.length > 0 && (
+            <div className="place-menu-title">
+              Folders{folders.length > 1 && <span className="place-menu-count">{folders.length}</span>}
+            </div>
+          )}
+          {folders.map(row)}
           {error && <div className="place-menu-error" role="alert">{error}</div>}
           <div className="menu-sep" />
           {googleConfigured() && googleAllowedHere() && (
