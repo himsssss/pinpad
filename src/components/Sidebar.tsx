@@ -13,7 +13,7 @@ import {
 import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
 import { TRASH } from './TrashPage';
 import { PlaceSwitcher } from './PlaceSwitcher';
-import { OtherPlaces } from './OtherPlaces';
+import { OtherPlace, PlaceNode, useOtherPlaces } from './OtherPlaces';
 import { SaveBar } from './SaveBar';
 import { openStorageSettings } from './Header';
 
@@ -53,6 +53,7 @@ export function Sidebar() {
   // The list is named after where it's saved: the Drive folder or the folder on this computer.
   const storageName = useStore((s) => s.storageName);
   const trashCount = useStore((s) => s.doc.trash?.length ?? 0);
+  const others = useOtherPlaces();
 
   if (!open) return null;
 
@@ -75,7 +76,7 @@ export function Sidebar() {
         {isCollapsed(section) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </button>
       <button className={`section-label ${browsing === '' ? 'current' : ''}`} onClick={() => browse(null)} title={`Show everything in ${label}`}>
-        {storageName && (usingDrive() ? <DriveIcon size={12} /> : usingOneDrive() ? <OneDriveIcon size={13} /> : <Folder size={12} />)}
+        {storageName && !others.length && (usingDrive() ? <DriveIcon size={12} /> : usingOneDrive() ? <OneDriveIcon size={13} /> : <Folder size={12} />)}
         <span className="section-name">{label}</span>
       </button>
       {isCollapsed(section) && count > 0 && <span className="section-count">{count}</span>}
@@ -209,6 +210,14 @@ export function Sidebar() {
     );
   };
 
+  const tree = (
+    <>
+      {topFolders.map(folderNode)}
+      {unfiled.map(projectRow)}
+      {topFolders.length === 0 && unfiled.length === 0 && <p className="sidebar-empty">Create a project, or a folder to group them.</p>}
+    </>
+  );
+
   return (
     <nav className="sidebar" aria-label="Folders and projects">
       {/* The logo opens the list of places boards are kept in (each Google Drive, folders, this browser). */}
@@ -224,7 +233,8 @@ export function Sidebar() {
         {...dropZone('', { boards: true, folders: true })}
       >
         <div className="sidebar-heading">
-          {sectionToggle('folders', storageName ?? 'Projects', topFolders.length + unfiled.length)}
+          {/* With several folders connected, they're all in this one list, the open one first. */}
+          {sectionToggle('folders', others.length ? 'Folders' : storageName ?? 'Projects', others.length ? others.length + 1 : topFolders.length + unfiled.length)}
           <button aria-label="New project" title="New project" onClick={() => newProject()}>
             <Plus size={14} />
           </button>
@@ -232,17 +242,26 @@ export function Sidebar() {
             <FolderPlus size={14} />
           </button>
         </div>
-        {!isCollapsed('folders') && (
-          <>
-            {topFolders.map(folderNode)}
-            {unfiled.map(projectRow)}
-            {topFolders.length === 0 && unfiled.length === 0 && (
-              <p className="sidebar-empty">Create a project, or a folder to group them.</p>
-            )}
-          </>
-        )}
+        {!isCollapsed('folders') &&
+          (others.length ? (
+            <>
+              <PlaceNode
+                id={`open:${storageName ?? ""}`}
+                name={storageName ?? 'Projects'}
+                title={`Show everything in ${storageName ?? 'Projects'}`}
+                icon={usingDrive() ? <DriveIcon size={14} /> : usingOneDrive() ? <OneDriveIcon size={15} /> : <FolderOpen size={15} />}
+                current
+                count={topFolders.length + unfiled.length}
+                onOpen={() => browse(null)}
+              >
+                {tree}
+              </PlaceNode>
+              {others.map((place) => <OtherPlace key={place.id} place={place} />)}
+            </>
+          ) : (
+            tree
+          ))}
       </div>
-      <OtherPlaces />
       <div className="sidebar-bottom">
         <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
           <span className="sidebar-icon"><Trash2 size={15} /></span>

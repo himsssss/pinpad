@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-react';
 import { browse, getState, openBoard, setUI, useStore } from '../store';
 import { PLACES_CHANGED, describePlace, listPlaces, openPlace, type Place } from '../places';
@@ -9,12 +9,8 @@ import { tell } from './ConfirmDialog';
 
 const isLocal = (p: Place) => p.kind === 'folder' || p.kind === 'webfolder';
 
-/**
- * The other folders on this computer, under the open one in the sidebar: each with its folders
- * and projects (as last saved here), so all of them are at hand. Clicking one opens its folder
- * on this computer, then the project.
- */
-export function OtherPlaces() {
+/** The other folders on this computer that are connected, besides the open place. */
+export function useOtherPlaces() {
   const storageName = useStore((s) => s.storageName);
   const rootId = useStore((s) => s.doc.rootId);
   const [others, setOthers] = useState<Place[]>([]);
@@ -33,30 +29,47 @@ export function OtherPlaces() {
     };
   }, [storageName, rootId]);
 
+  return others;
+}
+
+/**
+ * A connected place as a top-level row in the sidebar's one list: the open place holds its
+ * folders and projects, the others what they held when last saved here. Folding is remembered.
+ */
+export function PlaceNode({ id, name, title, icon, current, count, busy, onOpen, children }: {
+  id: string; name: string; title: string; icon: ReactNode; current?: boolean; count: number; busy?: boolean;
+  onOpen: () => void; children: ReactNode;
+}) {
+  const collapsed = useStore((s) => s.ui.collapsedSections.includes(`place:${id}`));
+  const browsingAll = useStore((s) => s.ui.browsing === '');
+  const toggle = () =>
+    setUI((u) => ({
+      collapsedSections: collapsed ? u.collapsedSections.filter((x) => x !== `place:${id}`) : [...u.collapsedSections, `place:${id}`],
+    }));
   return (
-    <>
-      {others.map((place) => (
-        <OtherPlace key={place.id} place={place} />
-      ))}
-    </>
+    <div className="folder place-node">
+      <div className={`folder-row place-row ${current ? 'open-place' : ''} ${current && browsingAll ? 'current' : ''}`}>
+        <button className="folder-toggle" aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`} onClick={toggle}>
+          {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+        </button>
+        <span className="sidebar-icon">{icon}</span>
+        <span className="folder-name" onClick={busy ? undefined : onOpen} title={title}>
+          {busy ? 'Opening…' : name}
+        </span>
+        {collapsed && count > 0 && <span className="folder-count">{count}</span>}
+      </div>
+      {!collapsed && <div className="folder-items">{children}</div>}
+    </div>
   );
 }
 
-function OtherPlace({ place }: { place: Place }) {
-  const collapsed = useStore((s) => s.ui.collapsedSections.includes(`place:${place.id}`));
+/** A connected folder that isn't open: clicking anything in it opens that folder, then what was clicked. */
+export function OtherPlace({ place }: { place: Place }) {
   const [summary] = useState<PlaceSummary | null>(() => placeSummary(place.id));
   const [openFolders, setOpenFolders] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const { name, detail } = describePlace(place, false);
 
-  const toggleSection = () =>
-    setUI((u) => ({
-      collapsedSections: collapsed
-        ? u.collapsedSections.filter((x) => x !== `place:${place.id}`)
-        : [...u.collapsedSections, `place:${place.id}`],
-    }));
-
-  /** Opens this folder on this computer, then what was clicked in it. */
   const go = async (then: () => void) => {
     if (busy) return;
     setBusy(true);
@@ -118,30 +131,25 @@ function OtherPlace({ place }: { place: Place }) {
   const unfiled = inFolder(undefined);
 
   return (
-    <div className="sidebar-section other-place">
-      <div className="sidebar-heading">
-        <span className="section-toggle">
-          <button className="section-arrow" aria-expanded={!collapsed} aria-label={collapsed ? `Expand ${name}` : `Collapse ${name}`} onClick={toggleSection}>
-            {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-          </button>
-          <button className="section-label" disabled={busy} onClick={() => go(() => browse(null))} title={`Open ${name} (${detail})`}>
-            <Folder size={12} />
-            <span className="section-name">{busy ? 'Opening…' : name}</span>
-          </button>
-          {collapsed && summary && top.length + unfiled.length > 0 && <span className="section-count">{top.length + unfiled.length}</span>}
-        </span>
-      </div>
-      {!collapsed &&
-        (!summary ? (
-          <p className="sidebar-empty">Open it once to list its projects here.</p>
-        ) : top.length + unfiled.length === 0 ? (
-          <p className="sidebar-empty">No projects yet.</p>
-        ) : (
-          <>
-            {top.map(folderNode)}
-            {unfiled.map(projectRow)}
-          </>
-        ))}
-    </div>
+    <PlaceNode
+      id={place.id}
+      name={name}
+      title={`Open ${name} (${detail})`}
+      icon={<Folder size={15} />}
+      count={top.length + unfiled.length}
+      busy={busy}
+      onOpen={() => go(() => browse(null))}
+    >
+      {!summary ? (
+        <p className="sidebar-empty">Open it once to list its projects here.</p>
+      ) : top.length + unfiled.length === 0 ? (
+        <p className="sidebar-empty">No projects yet.</p>
+      ) : (
+        <>
+          {top.map(folderNode)}
+          {unfiled.map(projectRow)}
+        </>
+      )}
+    </PlaceNode>
   );
 }
