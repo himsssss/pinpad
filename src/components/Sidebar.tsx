@@ -13,6 +13,7 @@ import {
 import { confirmTrashFolder, folderMenu, openContextMenu, placeMenu, projectMenu } from './ContextMenu';
 import { TRASH } from './TrashPage';
 import { PlaceSwitcher } from './PlaceSwitcher';
+import { OtherPlaces } from './OtherPlaces';
 import { SaveBar } from './SaveBar';
 import { openStorageSettings } from './Header';
 
@@ -241,6 +242,7 @@ export function Sidebar() {
           </>
         )}
       </div>
+      <OtherPlaces />
       <div className="sidebar-bottom">
         <button className={`project-row trash-row ${browsing === TRASH ? 'current' : ''}`} onClick={() => browse(TRASH)}>
           <span className="sidebar-icon"><Trash2 size={15} /></span>

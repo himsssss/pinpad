@@ -11,6 +11,7 @@ import { oneDriveStorage } from './oneDriveStorage';
 import { allowWebFolder, currentWebFolder, FolderAccessNeeded, setCurrentWebFolder, webFolderStorage, webFoldersSupported } from './webFolderStorage';
 import { microsoftAccount } from './microsoftAuth';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
+import { rememberSummary } from './placeSummaries';
 import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
 export interface State {
@@ -268,6 +269,18 @@ const docKey = () => {
   if (cloud === 'onedrive') return `doc:onedrive:${microsoftAccount() ?? ''}`;
   if (usingWebFolder()) return `doc:folder:${currentWebFolder()!.id}`;
   return 'doc';
+};
+
+/** The folder open in the desktop apps, which names its place (see placeId). */
+let nativeFolder: string | null = null;
+
+/** The open place, named as in places.ts (listPlaces). */
+const placeId = () => {
+  const cloud = cloudInUse();
+  if (cloud === 'drive') return `drive:${googleAccount() ?? ''}`;
+  if (cloud === 'onedrive') return `onedrive:${microsoftAccount() ?? ''}`;
+  if (usingWebFolder()) return `webfolder:${currentWebFolder()!.id}`;
+  return nativeFolder ? `folder:${nativeFolder}` : 'browser';
 };
 
 const currentBackend = (): Backend | undefined => {
@@ -533,6 +546,8 @@ const LOCAL_ERROR = "Couldn't save in this browser";
 async function saveLocal(doc: Doc) {
   try {
     await save(docKey(), doc);
+    // What the sidebar lists for this place while another one is open.
+    rememberSummary(placeId(), doc);
     if (state.storageError?.startsWith(LOCAL_ERROR)) setState({ storageError: null });
   } catch (err) {
     if (backend) return;
@@ -640,7 +655,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   const wasMode = cloudInUse() ?? (usingWebFolder() ? 'folder' : null);
   const wasFolder = currentWebFolder();
   const previous = target.kind === 'folder' && native ? await native.location() : null;
-  if (target.kind === 'folder') await native?.use(target.folder);
+  if (target.kind === 'folder' && native) nativeFolder = (await native.use(target.folder)).folder;
   const cloud = target.kind === 'drive' || target.kind === 'onedrive' ? target.kind : null;
   // Opening keeps the listing just made to see whether there's a workspace there (it's
   // listed afresh anyway once a few seconds old).
@@ -700,7 +715,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
       startup = finishStart(backend);
       return;
     }
-    if (previous && native) await native.use(previous.isDefault ? null : previous.folder);
+    if (previous && native) nativeFolder = (await native.use(previous.isDefault ? null : previous.folder)).folder;
     setMode(wasMode);
     setCurrentWebFolder(wasFolder);
     backend = currentBackend();
@@ -723,6 +738,7 @@ export async function initStore() {
   let doc = own ?? (await load<Doc>('doc').catch(() => undefined));
   let storageError: string | null = null;
   let blockError: unknown = null;
+  nativeFolder = (await nativeStorage()?.location().catch(() => null))?.folder ?? null;
   backend = currentBackend();
   // Google Drive is a network away: open with this device's copy of it, and read Drive after.
   const quick = (backend === driveStorage || backend === oneDriveStorage || backend === webFolderStorage) && !!own?.boards?.[own.rootId];

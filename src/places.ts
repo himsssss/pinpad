@@ -8,6 +8,7 @@ import { browserHasBoards, cloudInUse, flushNow, setOpening, switchStorage, usin
 import { chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderHasWorkspace, webFolders, webFoldersSupported } from './webFolderStorage';
 import { nativeStorage } from './native';
 import { pinpadAccount, rememberStorage } from './pinpadAccount';
+import { forgetSummary } from './placeSummaries';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
 import {
@@ -25,6 +26,8 @@ export type Place =
   | { id: string; kind: 'browser' };
 
 const FOLDERS_KEY = 'pinpad:folders';
+/** Sent when a place leaves the list, so the sidebar's other folders follow. */
+export const PLACES_CHANGED = 'pinpad:places-changed';
 
 function savedFolders(): string[] {
   try {
@@ -177,6 +180,8 @@ export async function removePlace(place: Place) {
   if (place.kind === 'onedrive') await microsoftSignOut(place.account);
   if (place.kind === 'webfolder') await forgetWebFolder(place.folderId);
   if (place.kind === 'folder') saveFolders(savedFolders().filter((f) => f !== place.folder));
+  forgetSummary(place.id);
+  window.dispatchEvent(new Event(PLACES_CHANGED));
 }
 
 /** A short name and a detail line for a place. */
