@@ -5,6 +5,7 @@ import { initStore } from './store';
 import { App } from './App';
 import { SignInGate } from './components/SignInPage';
 import { accountsConfigured, signInWithTracker } from './pinpadAccount';
+import { keepTrackerBrief } from './ideationBoards';
 import { registerServiceWorker } from './serviceWorker';
 import '@fontsource-variable/dm-sans/index.css';
 import './styles.css';
@@ -33,10 +34,13 @@ if (import.meta.env.PROD && SENTRY_DSN) {
 if (import.meta.env.PROD && /^https?:$/.test(location.protocol) && !window.pinpadNative) registerServiceWorker();
 
 // Opened from Creative Tracker's "Open board": #tracker=<token> signs in as the tracker's user
-// (pinpadAccount.ts). The token leaves the address bar at once; if it can't be used, the
+// (pinpadAccount.ts), and #project=&brief=&year=&month= say which brief's board to open
+// (ideationBoards.ts). They leave the address bar at once; if the token can't be used, the
 // sign-in page shows as usual.
-const fromTracker = new URLSearchParams(location.hash.slice(1)).get('tracker');
-if (fromTracker) history.replaceState(null, '', location.pathname + location.search);
+const fromLink = new URLSearchParams(location.hash.slice(1));
+const fromTracker = fromLink.get('tracker');
+keepTrackerBrief(fromLink);
+if (fromTracker || fromLink.has('brief')) history.replaceState(null, '', location.pathname + location.search);
 const trackerSignIn = fromTracker && accountsConfigured()
   ? signInWithTracker(fromTracker).catch((err) => console.warn('Creative Tracker sign-in:', err instanceof Error ? err.message : err))
   : Promise.resolve();
