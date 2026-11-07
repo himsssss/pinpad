@@ -122,6 +122,20 @@ export async function signInWithPassword(email: string, password: string) {
   return signedIn(await post<AuthReply>(`${AUTH}:signInWithPassword?key=${API_KEY}`, { email: email.trim(), password, returnSecureToken: true }));
 }
 
+/**
+ * Single sign-on from Creative Tracker: its "Open board" arrives with #tracker=<token>, a
+ * Firebase custom token the tracker signs for its own user (uid "tracker-<id>"). Firebase
+ * trades it for a normal sign-in; the account shows the tracker's email, from the token's claims.
+ */
+export async function signInWithTracker(token: string) {
+  const r = await post<{ idToken: string; refreshToken: string; expiresIn: string }>(
+    `${AUTH}:signInWithCustomToken?key=${API_KEY}`,
+    { token, returnSecureToken: true },
+  );
+  const claims = JSON.parse(atob(r.idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { user_id?: string; sub?: string; trackerEmail?: string };
+  return signedIn({ localId: claims.user_id ?? claims.sub ?? '', email: claims.trackerEmail ?? '', idToken: r.idToken, refreshToken: r.refreshToken, expiresIn: r.expiresIn });
+}
+
 /** Emails a link to choose a new password. */
 export async function sendPasswordReset(email: string) {
   await post(`${AUTH}:sendOobCode?key=${API_KEY}`, { requestType: 'PASSWORD_RESET', email: email.trim() });
