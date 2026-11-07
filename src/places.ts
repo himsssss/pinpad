@@ -4,7 +4,7 @@
  * browser (website). One is open at a time and each has its own folders and projects.
  */
 
-import { browserHasBoards, cloudInUse, flushNow, setOpening, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
+import { browserHasBoards, cloudInUse, flushNow, whileSwitching, setOpening, switchStorage, usingDrive, usingOneDrive, usingWebFolder, getState } from './store';
 import { chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderHasWorkspace, webFolders, webFoldersSupported } from './webFolderStorage';
 import { nativeStorage } from './native';
 import { pinpadAccount, rememberStorage } from './pinpadAccount';
@@ -60,7 +60,8 @@ export async function listPlaces(): Promise<{ places: Place[]; current: string }
   } else {
     // Where folders can be chosen they replace "This browser", which only shows while it's
     // still in use (before a folder is chosen).
-    if (!webFoldersSupported() || (!cloudInUse() && !usingWebFolder())) places.push({ id: 'browser', kind: 'browser' });
+    // ...and whenever it still holds boards, so they can always be opened again.
+    if (!webFoldersSupported() || (!cloudInUse() && !usingWebFolder()) || (await browserHasBoards())) places.push({ id: 'browser', kind: 'browser' });
     if (webFoldersSupported()) {
       for (const f of await webFolders()) places.push({ id: `webfolder:${f.id}`, kind: 'webfolder', folderId: f.id, name: f.name });
       if (usingWebFolder()) current = `webfolder:${currentWebFolder()!.id}`;
@@ -99,27 +100,61 @@ export function rememberOpenPlace() {
   if (account) rememberStorage({ kind: usingDrive() ? 'drive' : 'onedrive', account }).catch(() => {});
 }
 
+/**
+ * Choosing a Drive or OneDrive makes its account the current one before asking what to do there.
+ * If that's cancelled or fails, the account that was open comes back, so the boards on screen
+ * never start saving into the other account.
+ */
+async function keepAccountUnlessOpened(
+  previous: string | null,
+  use: (account: string) => void,
+  reset: () => void,
+  opened: () => boolean,
+  run: () => Promise<void>,
+) {
+  try {
+    await run();
+  } finally {
+    if (!opened() && previous) {
+      use(previous);
+      reset();
+    }
+  }
+}
+/** The account open before a sign-in (which makes the new one current) started connecting another. */
+let previousGoogle: string | null = null;
+let previousMicrosoft: string | null = null;
+
 async function open(place: Place, choose: NewPlaceChoice) {
-  // Unsaved changes go to the place they were made in, before anything switches.
+  // Unsaved changes go to the place they were made in, before anything switches; then saves
+  // wait until it has (changing the account points Drive's storage at the new one at once).
   await flushNow();
+  await whileSwitching(() => openHere(place, choose));
+}
+
+async function openHere(place: Place, choose: NewPlaceChoice) {
   if (place.kind === 'drive') {
     await ensureAccount(place.account);
-    useAccount(place.account);
-    driveStorage.reset();
-    if (await driveStorage.hasWorkspace()) return switchStorage({ kind: 'drive' }, 'open');
-    setOpening(null);
-    const keep = await choose('this Google Drive');
-    if (keep) await switchStorage({ kind: 'drive' }, keep);
+    await keepAccountUnlessOpened(previousGoogle ?? googleAccount(), useAccount, () => driveStorage.reset(), () => usingDrive() && googleAccount() === place.account, async () => {
+      useAccount(place.account);
+      driveStorage.reset();
+      if (await driveStorage.hasWorkspace()) return switchStorage({ kind: 'drive' }, 'open');
+      setOpening(null);
+      const keep = await choose('this Google Drive');
+      if (keep) await switchStorage({ kind: 'drive' }, keep);
+    });
     return;
   }
   if (place.kind === 'onedrive') {
     await ensureMicrosoftAccount(place.account);
-    useMicrosoftAccount(place.account);
-    oneDriveStorage.reset();
-    if (await oneDriveStorage.hasWorkspace()) return switchStorage({ kind: 'onedrive' }, 'open');
-    setOpening(null);
-    const keep = await choose('this OneDrive');
-    if (keep) await switchStorage({ kind: 'onedrive' }, keep);
+    await keepAccountUnlessOpened(previousMicrosoft ?? microsoftAccount(), useMicrosoftAccount, () => oneDriveStorage.reset(), () => usingOneDrive() && microsoftAccount() === place.account, async () => {
+      useMicrosoftAccount(place.account);
+      oneDriveStorage.reset();
+      if (await oneDriveStorage.hasWorkspace()) return switchStorage({ kind: 'onedrive' }, 'open');
+      setOpening(null);
+      const keep = await choose('this OneDrive');
+      if (keep) await switchStorage({ kind: 'onedrive' }, keep);
+    });
     return;
   }
   if (place.kind === 'folder') {
@@ -146,16 +181,26 @@ async function open(place: Place, choose: NewPlaceChoice) {
 /** Connects another Google account (Google lets the user pick which) and opens its Drive. */
 export async function addGoogleDrive(choose: NewPlaceChoice) {
   if (!googleAllowedHere()) throw new Error('Google sign-in only works on the Pinpad website and its registered addresses.');
-  const account = await signIn(true);
-  if (!account) throw new Error("Couldn't tell which Google account signed in");
-  await openPlace({ id: `drive:${account}`, kind: 'drive', account }, choose);
+  previousGoogle = googleAccount();
+  try {
+    const account = await signIn(true);
+    if (!account) throw new Error("Couldn't tell which Google account signed in");
+    await openPlace({ id: `drive:${account}`, kind: 'drive', account }, choose);
+  } finally {
+    previousGoogle = null;
+  }
 }
 
 /** Connects a Microsoft account (Microsoft lets the user pick which) and opens its OneDrive. */
 export async function addOneDrive(choose: NewPlaceChoice) {
   if (!microsoftAllowedHere()) throw new Error('Microsoft sign-in only works on the Pinpad website and its registered addresses.');
-  const account = await microsoftSignIn();
-  await openPlace({ id: `onedrive:${account}`, kind: 'onedrive', account }, choose);
+  previousMicrosoft = microsoftAccount();
+  try {
+    const account = await microsoftSignIn();
+    await openPlace({ id: `onedrive:${account}`, kind: 'onedrive', account }, choose);
+  } finally {
+    previousMicrosoft = null;
+  }
 }
 
 /** Picks a folder on this computer from the website (Chrome and Edge) and opens it. */

@@ -29,6 +29,8 @@ export function parseWorkspace(text: string): Doc {
 }
 
 export const INDEX_FILE = 'Pinpad Workspace.json';
+/** In a layout's paths: a spare copy of a board (not a board), to be removed. */
+export const SPARE_PREFIX = '~spare:';
 /** Deleted folders and projects (see TrashEntry), kept in one file beside the index. */
 export const TRASH_FILE = 'Pinpad Trash.json';
 /** Boards saved as templates (see SavedTemplate), also beside the index. */
@@ -295,11 +297,18 @@ export async function readWorkspace(
   }
   if (missing.length) deleteBoards(doc, new Set(missing.map(([id]) => id)));
 
-  const paths = new Map([...found].map(([id, f]) => [id, f.path]));
-  const files = new Map([...found].map(([, f]) => [f.path, f.text]));
+  // A board only found in the spare copy a save cut short made (store.ts, changesTo) is where
+  // the index says, not renamed: it's written there again by the next save.
+  const spare = (path: string) => /^~[^/]{1,8}-[^/]+\.json$/i.test(basename(path));
+  const atSpare = new Set([...found].filter(([id, f]) => spare(f.path) && index.boards[id]).map(([id]) => id));
+  const paths = new Map([...found].map(([id, f]) => [id, atSpare.has(id) ? index.boards[id] : f.path]));
+  const files = new Map([...found].filter(([id]) => !atSpare.has(id)).map(([, f]) => [f.path, f.text]));
   if (texts[TRASH_FILE] != null) files.set(TRASH_FILE, texts[TRASH_FILE]!);
   if (texts[TEMPLATES_FILE] != null) files.set(TEMPLATES_FILE, texts[TEMPLATES_FILE]!);
   if (listing) followRenames(doc, index, paths, listing);
+  if (listing) dropDeletedFolders(doc, index, listing);
+  // Spare copies left behind are cleared away by the next save (SPARE_PREFIX entries).
+  for (const f of listing ?? []) if (!f.dir && spare(f.path)) paths.set(`${SPARE_PREFIX}${f.path}`, f.path);
   return { doc, files, paths, attachments: attachmentsOnDisk(doc, index) };
 }
 
@@ -333,6 +342,47 @@ function deleteBoards(doc: Doc, gone: Set<string>) {
  * renamed or moved outside Pinpad, so the next save keeps the user's names instead of
  * putting the old ones back.
  */
+/**
+ * Sidebar folders whose folder on disk was deleted outside Pinpad go too (their projects already
+ * went with their files). Only a folder that had files before, is now empty, and could have been
+ * seen by the listing (it stops at 8 levels and 5000 entries) — so a folder made in Pinpad that
+ * has nothing in it yet (and so no folder on disk) stays.
+ */
+function dropDeletedFolders(doc: Doc, index: Index, listing: Listed[]) {
+  if (listing.length >= 5000) return;
+  const dirs = new Set(listing.filter((f) => f.dir).map((f) => f.path.toLowerCase()));
+  const before = placeFolders(index.folders ?? {}, namer());
+  const now = placeFolders(doc.folders, namer());
+  const boardPaths = Object.values(index.boards).map((p) => p.toLowerCase());
+  const hadFiles = (dir: string) => boardPaths.some((p) => p.startsWith(`${dir.toLowerCase()}/`));
+  const filed = new Set(projects(doc).map((p) => p.folderId).filter(Boolean));
+  const holdsProjects = (id: string): boolean =>
+    filed.has(id) || Object.values(doc.folders).some((f) => f.parentId === id && holdsProjects(f.id));
+  const gone = new Set<string>();
+  for (const [id, dir] of now) {
+    const old = before.get(id);
+    if (!old || dirs.has(dir.toLowerCase()) || segments(dir).length > 8) continue;
+    if (hadFiles(old) && !holdsProjects(id)) gone.add(id);
+  }
+  // ...with the folders inside them.
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const f of Object.values(doc.folders)) {
+      if (f.parentId && gone.has(f.parentId) && !gone.has(f.id) && !holdsProjects(f.id)) {
+        gone.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  for (const id of gone) delete doc.folders[id];
+}
+
+/** Pinpad's own name for a second board of the same title ("Plan (2)") isn't a new title. */
+const titleFrom = (name: string, title: string) => {
+  const m = /^(.*) \(\d+\)$/.exec(name);
+  return m && m[1].toLowerCase() === title.trim().toLowerCase() ? title : name;
+};
+
 function followRenames(doc: Doc, index: Index, paths: Map<string, string>, listing: Listed[]) {
   const moved = [...paths].filter(([id, path]) => path !== index.boards[id] && doc.boards[id] && id !== doc.rootId);
   if (!moved.length) return;
@@ -398,11 +448,11 @@ function followRenames(doc: Doc, index: Index, paths: Map<string, string>, listi
       // sidebar folder or the top level.
       const dir = dirname(path);
       const own = dir && !folderAt.has(dir.toLowerCase()) ? dir : '';
-      if (own && basename(own) !== basename(dirname(before))) board.title = basename(own);
+      if (own && basename(own) !== basename(dirname(before))) board.title = titleFrom(basename(own), board.title);
       const folderId = folderFor(own ? dirname(own) : dir);
       if (folderId) board.folderId = folderId;
       else delete board.folderId;
     }
-    if (stem(path) !== stem(before)) board.title = stem(path);
+    if (stem(path) !== stem(before)) board.title = titleFrom(stem(path), board.title);
   }
 }

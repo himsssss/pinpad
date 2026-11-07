@@ -77,7 +77,7 @@ async function load() {
   const listed: Listed[] = [];
   // Folder by folder, a few at a time.
   let level: [string, string][] = [['', app.id]];
-  for (let depth = 0; level.length && depth < 10; depth++) {
+  for (let depth = 0; level.length && depth < 64; depth++) {
     const next: [string, string][] = [];
     for (let i = 0; i < level.length; i += 6) {
       await Promise.all(

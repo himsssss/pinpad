@@ -308,6 +308,30 @@ export function trashFolder(folderId: string) {
   toTrash('folder', folder.name, folders, projectIds);
   // Showing the deleted folder (or one inside it): go up to where it was.
   if (ui.browsing && folders.includes(ui.browsing)) setUI({ browsing: parent ?? '' });
+  leaveIfDeleted(ui.boardId);
+}
+
+/** The open board went to the Trash: show Home instead (staying on the Projects page if that's open). */
+function leaveIfDeleted(boardId: string) {
+  const { doc, ui } = getState();
+  if (doc.boards[boardId]) return;
+  if (ui.browsing === null) openBoard(doc.rootId);
+  else setUI({ boardId: doc.rootId });
+}
+
+/**
+ * Deletes cards. Projects (board cards on Home) go to the Trash rather than being deleted with
+ * everything in them, as they do from the sidebar.
+ */
+export function deleteCards(ids: string[], history: 'push' | 'pending' = 'push') {
+  const { doc } = getState();
+  const projectCards = new Set(ids.filter((id) => { const e = doc.elements[id]; return e?.type === 'board' && e.boardId === doc.rootId; }));
+  const rest = ids.filter((id) => !projectCards.has(id));
+  if (rest.length) mutate((d) => deleteElements(d, rest.filter((id) => d.elements[id])), history);
+  for (const id of projectCards) {
+    const card = getState().doc.elements[id];
+    if (card?.type === 'board') trashProject(card.targetId);
+  }
 }
 
 /** Moves a project with all its boards and cards to the Trash. */
@@ -316,25 +340,55 @@ export function trashProject(boardId: string) {
   const board = doc.boards[boardId];
   if (!board || !homeCard(doc, boardId)) return;
   toTrash('project', board.title || 'Untitled', [], [boardId]);
-  if (!getState().doc.boards[ui.boardId]) openBoard(getState().doc.rootId);
+  leaveIfDeleted(ui.boardId);
 }
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Puts something back where it was (at the top level if its folder is gone). */
 export function restoreFromTrash(entryId: string) {
   mutate((d) => {
     const entry = d.trash?.find((t) => t.id === entryId);
     if (!entry) return;
-    const restored = new Set(entry.folders.map((f) => f.id));
-    for (const f of entry.folders) {
-      d.folders[f.id] = { ...f };
-      if (f.parentId && !d.folders[f.parentId] && !restored.has(f.parentId)) delete d.folders[f.id].parentId;
+    // Parents before children, so each folder can find its (possibly merged) parent.
+    const depth = (f: { parentId?: string }): number => {
+      const parent = entry.folders.find((o) => o.id === f.parentId);
+      return parent ? 1 + depth(parent) : 0;
+    };
+    // A folder with the same name in the same place since: its contents join that one (no duplicates).
+    const mergedInto = new Map<string, string>();
+    for (const f of [...entry.folders].sort((a, b) => depth(a) - depth(b))) {
+      const wanted = f.parentId ? mergedInto.get(f.parentId) ?? f.parentId : undefined;
+      const parentId = wanted && d.folders[wanted] ? wanted : undefined;
+      const twin = Object.values(d.folders).find((o) => o.id !== f.id && o.parentId === parentId && sameName(o.name, f.name));
+      if (twin) {
+        mergedInto.set(f.id, twin.id);
+        continue;
+      }
+      const siblings = Object.values(d.folders).filter((o) => o.parentId === parentId);
+      const { parentId: _old, ...rest } = f;
+      d.folders[f.id] = { ...rest, order: Math.max(0, ...siblings.map((o) => o.order)) + 1, ...(parentId ? { parentId } : {}) };
     }
+    const restoredBoards = new Set(entry.boards.map((b) => b.id));
     for (const b of entry.boards) {
-      d.boards[b.id] = { ...b };
-      if (b.folderId && !d.folders[b.folderId]) delete d.boards[b.id].folderId;
+      const folderId = b.folderId ? mergedInto.get(b.folderId) ?? b.folderId : undefined;
+      d.boards[b.id] = { ...b, folderId };
+      if (!folderId || !d.folders[folderId]) delete d.boards[b.id].folderId;
+      // Home was replaced since (Import backup, Reset): the project goes on today's Home.
+      if (b.parentId && !d.boards[b.parentId] && !restoredBoards.has(b.parentId)) d.boards[b.id].parentId = d.rootId;
     }
     let z = maxZ(d);
-    for (const el of entry.elements) d.elements[el.id] = { ...el, ...(el.boardId === d.rootId ? { z: ++z } : {}) } as El;
+    for (const el of entry.elements) {
+      const copy = { ...el } as El;
+      if (!d.boards[copy.boardId]) copy.boardId = d.rootId;
+      if (copy.boardId === d.rootId) {
+        copy.z = ++z;
+        // Its Home column lost track of it when it was trashed: it comes back as a free card.
+        const col = copy.columnId ? d.elements[copy.columnId] : undefined;
+        if (copy.columnId && !(col?.type === 'column' && col.children.includes(copy.id))) delete copy.columnId;
+      }
+      d.elements[copy.id] = copy;
+    }
     d.trash = d.trash!.filter((t) => t.id !== entryId);
   });
 }

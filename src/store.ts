@@ -12,7 +12,7 @@ import { allowWebFolder, currentWebFolder, FolderAccessNeeded, setCurrentWebFold
 import { microsoftAccount } from './microsoftAuth';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { rememberSummary } from './placeSummaries';
-import { INDEX_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
+import { INDEX_FILE, SPARE_PREFIX, TEMPLATES_FILE, TRASH_FILE, layoutWorkspace, parseIndex, readWorkspace, type Layout, type Listed } from './workspaceFiles';
 
 export interface State {
   doc: Doc;
@@ -127,7 +127,9 @@ function restore(doc: Doc) {
   let boardId = state.ui.boardId;
   if (!doc.boards[boardId]) boardId = doc.rootId;
   const selection = state.ui.selection.filter((id) => doc.elements[id]);
-  setState({ doc, ui: { ...state.ui, boardId, selection, editingId: null }, saved: false });
+  // Undoing a new folder while its page is open: show the top level.
+  const browsing = state.ui.browsing && !doc.folders[state.ui.browsing] ? '' : state.ui.browsing;
+  setState({ doc, ui: { ...state.ui, boardId, browsing, selection, editingId: null }, saved: false });
   schedulePersist();
 }
 
@@ -263,7 +265,7 @@ const cloudStorage = (cloud: Cloud) => (cloud === 'drive' ? driveStorage : oneDr
  * switching accounts never shows one account's boards in another's place. Browser-only
  * storage and the desktop apps' folders keep the original key.
  */
-const docKey = () => {
+const liveDocKey = () => {
   const cloud = cloudInUse();
   if (cloud === 'drive') return `doc:drive:${googleAccount() ?? ''}`;
   if (cloud === 'onedrive') return `doc:onedrive:${microsoftAccount() ?? ''}`;
@@ -275,13 +277,27 @@ const docKey = () => {
 let nativeFolder: string | null = null;
 
 /** The open place, named as in places.ts (listPlaces). */
-const placeId = () => {
+const livePlaceId = () => {
   const cloud = cloudInUse();
   if (cloud === 'drive') return `drive:${googleAccount() ?? ''}`;
   if (cloud === 'onedrive') return `onedrive:${microsoftAccount() ?? ''}`;
   if (usingWebFolder()) return `webfolder:${currentWebFolder()!.id}`;
   return nativeFolder ? `folder:${nativeFolder}` : 'browser';
 };
+
+/**
+ * The place this tab opened. The choice of place is shared by every tab (localStorage), but each
+ * tab's boards belong to the place it opened, so its copy and summary keep going there even
+ * after another tab switches (that tab then reloads: see the storage listener in initStore).
+ */
+let pinned: { doc: string; place: string } | null = null;
+const pin = () => {
+  pinned = { doc: liveDocKey(), place: livePlaceId() };
+};
+const docKey = () => pinned?.doc ?? liveDocKey();
+const placeId = () => pinned?.place ?? livePlaceId();
+/** Settings that say which place is open (store, webFolderStorage, googleAuth, microsoftAuth). */
+const PLACE_KEYS = ['pinpad:storage', 'pinpad:web-folder', 'pinpad:google-account', 'pinpad:microsoft-account'];
 
 const currentBackend = (): Backend | undefined => {
   const cloud = cloudInUse();
@@ -338,16 +354,40 @@ export const storageBlocked = () => fileBlocked;
 
 /** What to write, and which old files to clear away, to go from onDisk to the next layout. */
 function changesTo(next: Layout): StorageBatch {
-  const write = [...next.files].filter(([path, text]) => onDisk.files.get(path) !== text);
+  // New paths first, then paths that already hold a file, the index last: a board moving to a
+  // new name (another taking its old one) is safe at its new path before its old file is
+  // overwritten, so a save cut short never leaves a board with no file of its own.
+  const held = new Set([...onDisk.files.keys()].map((p) => p.toLowerCase()));
+  const rank = (path: string) => (path === INDEX_FILE ? 2 : held.has(path.toLowerCase()) ? 1 : 0);
+  const write = [...next.files].filter(([path, text]) => onDisk.files.get(path) !== text).sort(([a], [b]) => rank(a) - rank(b));
+  // Boards trading paths (both already held): each is first copied to a spare name beside it,
+  // so a save cut short still has every board somewhere (it's found by the id inside), and the
+  // copies are removed once all is written.
+  const holder = new Map([...onDisk.paths].filter(([id]) => !id.startsWith(SPARE_PREFIX)).map(([id, path]) => [path.toLowerCase(), id]));
+  const writer = new Map([...next.paths].map(([id, path]) => [path.toLowerCase(), id]));
+  const spares: [string, string][] = [];
+  for (const [path, text] of write) {
+    const was = holder.get(path.toLowerCase());
+    const now = writer.get(path.toLowerCase());
+    if (!was || !now || was === now) continue;
+    const slash = path.lastIndexOf('/') + 1;
+    spares.push([`${path.slice(0, slash)}~${now.slice(0, 8)}-${path.slice(slash)}`, text]);
+  }
+  write.unshift(...spares);
   // Compared ignoring case: on macOS and Windows "Plan.json" and "plan.json" are one file,
   // so renaming a board's case rewrites the file in place and nothing may be removed.
   const kept = new Set([...next.files.keys()].map((p) => p.toLowerCase()));
   const remove: string[] = [];
   const trash: string[] = [];
   for (const [id, path] of onDisk.paths) {
+    if (id.startsWith(SPARE_PREFIX)) {
+      remove.push(path);
+      continue;
+    }
     if (kept.has(path.toLowerCase())) continue;
     (next.paths.has(id) ? remove : trash).push(path);
   }
+  remove.push(...spares.map(([path]) => path));
   return { write, remove, trash };
 }
 
@@ -365,13 +405,27 @@ function attachmentChanges(next: Layout) {
   return { move, upload, trash };
 }
 
-function writeFiles(doc: Doc) {
+/** Set while the place is changing: saves wait, so nothing is written into the place being opened. */
+let switching = 0;
+export async function whileSwitching<T>(run: () => Promise<T>): Promise<T> {
+  switching++;
+  try {
+    return await run();
+  } finally {
+    switching--;
+  }
+}
+
+/** `own`: the switch itself writing the boards to the new place. */
+function writeFiles(doc: Doc, own = false) {
   const target = backend;
   // Kept only in this browser: there's nowhere else for files to go.
   if (!target) settlePending(() => true);
-  if (!target || fileBlocked || starting) return writing;
+  if (!target || fileBlocked || starting || (switching && !own)) return writing;
   writesPending++;
   writing = writing.then(async () => {
+    // The place changed while this waited: what's on screen now belongs to the new one.
+    if (target !== backend || (switching && !own)) return;
     const next = layoutWorkspace(doc);
     const batch = changesTo(next);
     const files = attachmentChanges(next);
@@ -410,6 +464,7 @@ function writeFiles(doc: Doc) {
       }
       const before = done;
       await target.write(batch, (n) => setState({ saveProgress: (before + n) / total }));
+      if (target !== backend) return;
       onDisk = next;
       // Saved, or no longer on any board.
       const inUse = new Set(Object.values(state.doc.elements).flatMap((e) => (e.type === 'file' ? [e.ref] : [])));
@@ -425,7 +480,20 @@ function writeFiles(doc: Doc) {
       return;
     }
     try {
-      seen = snapshot(await target.list());
+      // Only what this save wrote or removed counts as seen: a change made elsewhere meanwhile
+      // (a folder renamed in Finder, another computer's edits) still shows as new, so it's read.
+      const listing = await target.list();
+      const prev = seen;
+      const ours = new Set(
+        [...batch.write.map(([path]) => path), ...batch.remove, ...batch.trash, ...files.upload.map(([, to]) => to), ...files.move.flatMap(([, from, to]) => [from, to]), ...files.trash.map(([, from]) => from)].map((p) => p.toLowerCase()),
+      );
+      // ...and the folders those live in (made or emptied by this save).
+      for (const path of [...ours]) for (let i = path.lastIndexOf('/'); i > 0; i = path.lastIndexOf('/', i - 1)) ours.add(path.slice(0, i));
+      const listed = new Set(listing.map((f) => f.path));
+      const goneElsewhere = !!prev && [...prev.keys()].some((path) => !listed.has(path) && !ours.has(path.toLowerCase()));
+      seen = !prev || goneElsewhere
+        ? (goneElsewhere ? null : snapshot(listing))
+        : new Map(listing.map((f) => [f.path, ours.has(f.path.toLowerCase()) || prev.get(f.path) === f.modified ? f.modified : (prev.get(f.path) ?? -1)]));
     } catch {
       // Without a fresh listing the next check just reads everything again.
       seen = null;
@@ -497,7 +565,9 @@ const clearSyncError = () => state.storageError?.startsWith(SYNC_ERROR) && setSt
  */
 async function syncFromStorage() {
   const from = backend;
-  if (!state || !from || fileBlocked || starting || syncing || Date.now() - lastSync < 3000) return;
+  if (!state || !from || fileBlocked || starting || switching || syncing || Date.now() - lastSync < 3000) return;
+  // Another place (or account) was chosen since this tab opened: never read or write it from here.
+  if (pinned && liveDocKey() !== pinned.doc) return;
   syncing = true;
   lastSync = Date.now();
   try {
@@ -610,7 +680,8 @@ export async function flushNow() {
  */
 export async function switchStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fresh') {
   try {
-    await moveStorage(target, keep);
+    await flushNow();
+    await whileSwitching(() => moveStorage(target, keep));
   } finally {
     refreshStorageName().catch(() => {});
   }
@@ -663,6 +734,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
   if (target.kind === 'webfolder') setCurrentWebFolder(target);
   setMode(cloud ?? (target.kind === 'webfolder' ? 'folder' : null));
   backend = currentBackend();
+  pin();
   fileBlocked = false;
   if (!backend) {
     // The website without Drive: the boards kept in this browser (or a new, empty workspace).
@@ -677,7 +749,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     onDisk = nothingOnDisk();
     showDoc(blankDoc());
     await saveLocal(state.doc);
-    await writeFiles(state.doc);
+    await writeFiles(state.doc, true);
     return;
   }
   if (keep === 'replace') {
@@ -688,6 +760,10 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
       const indexText = (await backend.read([INDEX_FILE]))[INDEX_FILE];
       const parsed = indexText ? parseIndex(indexText) : null;
       if (parsed && 'index' in parsed) replaced = Object.values(parsed.index.boards);
+      // Its Trash and templates go too, unless these boards have their own to write over them.
+      const extras = [...(state.doc.trash ? [] : [TRASH_FILE]), ...(state.doc.templates ? [] : [TEMPLATES_FILE])];
+      const there = extras.length ? await backend.read(extras) : {};
+      replaced.push(...extras.filter((f) => there[f] != null));
     } catch {
       // An unreadable index there just gets overwritten.
     }
@@ -695,7 +771,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     onDisk = nothingOnDisk();
     setState({ storageError: null });
     await saveLocal(state.doc);
-    await writeFiles(state.doc);
+    await writeFiles(state.doc, true);
     return;
   }
   // The storage is read first, so folders deleted since this device's copy was saved never
@@ -719,6 +795,7 @@ async function moveStorage(target: StorageTarget, keep: 'open' | 'replace' | 'fr
     setMode(wasMode);
     setCurrentWebFolder(wasFolder);
     backend = currentBackend();
+    pin();
     throw err;
   }
   const { doc, disk } = found;
@@ -735,11 +812,13 @@ function schedulePersist() {
 export async function initStore() {
   // This place's own copy; before copies were kept per account, there was one shared copy.
   const own = await load<Doc>(docKey()).catch(() => undefined);
-  let doc = own ?? (await load<Doc>('doc').catch(() => undefined));
+  // Only this place's own copy: the browser's boards ("doc") never stand in for a Drive or folder.
+  let doc = own;
   let storageError: string | null = null;
   let blockError: unknown = null;
   nativeFolder = (await nativeStorage()?.location().catch(() => null))?.folder ?? null;
   backend = currentBackend();
+  pin();
   // Google Drive is a network away: open with this device's copy of it, and read Drive after.
   const quick = (backend === driveStorage || backend === oneDriveStorage || backend === webFolderStorage) && !!own?.boards?.[own.rootId];
   if (backend && !quick) {
@@ -771,6 +850,11 @@ export async function initStore() {
   window.addEventListener('pagehide', flushPending);
   document.addEventListener('visibilitychange', () => (document.visibilityState === 'hidden' ? flushPending() : syncFromStorage()));
   window.addEventListener('focus', () => syncFromStorage());
+  // Another tab opened a different place: save what's here to this tab's place, then follow it.
+  window.addEventListener('storage', (e) => {
+    if (!e.key || !PLACE_KEYS.includes(e.key) || !pinned || liveDocKey() === pinned.doc) return;
+    void flushNow().finally(() => location.reload());
+  });
   if (usingWebFolder()) {
     // The browser may want the folder allowed again after a restart, which needs a click: the
     // first click asks, and saving carries on.
