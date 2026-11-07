@@ -1,11 +1,12 @@
 import type { El, ElType, FileEl, ImageEl } from './types';
 import { getState, mutate, select, startEditing } from './store';
-import { DEFAULT_WIDTH, cloneElements, createElement, deleteElements, hostname, maxZ, needsProject, normalizeUrl } from './doc';
+import { DEFAULT_WIDTH, cloneElements, createElement, hostname, maxZ, needsProject, normalizeUrl } from './doc';
 import { viewportCenter, worldRect } from './interactions';
 import { readImage } from './images';
 import { addAttachment } from './attachments';
 import { importShareFile } from './shareFile';
 import { tell } from './components/ConfirmDialog';
+import { deleteCards } from './projectActions';
 
 /** No cards on Home until there's a project or a folder (Home asks for one instead). */
 export const addingBlocked = () => needsProject(getState().doc, getState().ui.boardId);
@@ -149,7 +150,7 @@ export function pickFiles() {
 export function deleteSelection() {
   const ids = getState().ui.selection;
   if (!ids.length) return;
-  mutate((d) => deleteElements(d, ids));
+  deleteCards(ids);
   select([]);
 }
 

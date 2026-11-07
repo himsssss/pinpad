@@ -49,7 +49,9 @@ export function fileBriefBoard(b: TrackerBrief): string {
   let boardId = '';
   mutate((d) => {
     let parentId: string | undefined;
-    for (const name of [IDEATION_FOLDER_NAME, b.project, b.year, b.month]) {
+    // Boards kept in a folder that is itself called "Ideation boards" don't need another one inside.
+    const inIdeationFolder = usingWebFolder() && same(currentWebFolder()?.name ?? '', IDEATION_FOLDER_NAME);
+    for (const name of [...(inIdeationFolder ? [] : [IDEATION_FOLDER_NAME]), b.project, b.year, b.month]) {
       const siblings = Object.values(d.folders).filter((f) => f.parentId === parentId);
       const found = siblings.find((f) => same(f.name, name));
       if (found) {
@@ -90,8 +92,10 @@ async function leaveOldIdeationFolder() {
   }
   if (!old) return;
   await whenOpened();
-  if (usingWebFolder() && currentWebFolder()?.id === old.id) {
-    await switchStorage({ kind: 'browser' }, (await browserHasBoards()) ? 'open' : 'fresh');
+  // Only where this browser has boards to go back to; otherwise the folder stays open (it's
+  // still a normal place in the logo menu, and a Drive can be opened from there).
+  if (usingWebFolder() && currentWebFolder()?.id === old.id && (await browserHasBoards())) {
+    await switchStorage({ kind: 'browser' }, 'open');
   }
 }
 

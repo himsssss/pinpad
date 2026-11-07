@@ -1,5 +1,6 @@
 import { checkpoint, currentView, getState, mutate, select, setUI } from './store';
-import { createElement, deleteElements, maxZ, moveElementsToBoard } from './doc';
+import { createElement, maxZ, moveElementsToBoard } from './doc';
+import { deleteCards } from './projectActions';
 import type { LineEl } from './types';
 import type { DropTarget, Guides } from './types';
 
@@ -323,7 +324,9 @@ function updateDropTarget(ev: PointerEvent, ids: string[]) {
         }).length;
         target = { kind, id: hostId, index };
       } else if (kind === 'folder') {
-        if (!hasBoard) continue;
+        // Only projects can be filed; anything else stops here rather than falling through the
+        // sidebar into a board hidden under it.
+        if (!hasBoard) break;
         target = { kind, id: hostId };
       } else {
         target = { kind, id: hostId };
@@ -354,7 +357,7 @@ function finishDrop(ids: string[], origins: Map<string, { x: number; y: number }
     return;
   }
   if (target.kind === 'trash') {
-    mutate((d) => deleteElements(d, ids), 'pending');
+    deleteCards(ids, 'pending');
     select([]);
     return;
   }

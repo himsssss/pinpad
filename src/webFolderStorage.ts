@@ -109,8 +109,22 @@ export async function allowWebFolder(id: string, ask: boolean) {
 /** Whether a folder already holds a Pinpad workspace (asks for permission, so from a click). */
 export async function webFolderHasWorkspace(id: string) {
   const folder = await find(id);
-  if (!folder || !(await allowWebFolder(id, true))) throw new Error('Pinpad needs permission to use that folder');
-  return !!(await fileAt(folder.handle, INDEX_FILE, false).catch(() => null));
+  if (!folder) throw new Error('That folder is no longer connected in this browser. Choose it again from the Pinpad logo.');
+  if (!(await allowWebFolder(id, true))) throw new Error('Pinpad needs permission to use that folder');
+  try {
+    await fileAt(folder.handle, INDEX_FILE, false);
+    return true;
+  } catch (err) {
+    if (!missing(err)) throw err;
+  }
+  // No workspace file, but is the folder itself still there? A moved or deleted folder isn't "empty".
+  try {
+    for await (const _ of entries(folder.handle)) break;
+  } catch (err) {
+    if (missing(err)) throw new Error(`The “${folder.name}” folder was moved or deleted. Choose it again from the Pinpad logo.`);
+    throw err;
+  }
+  return false;
 }
 
 let handle: Dir | null = null;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-react';
-import { afterSignIn, cloudInUse, switchStorage, usingWebFolder, useStore, type StorageTarget } from '../store';
+import { afterSignIn, browserHasBoards, cloudInUse, switchStorage, usingWebFolder, useStore, type StorageTarget } from '../store';
 import { allowWebFolder, chooseWebFolder, currentWebFolder, webFolderHasWorkspace, webFoldersSupported } from '../webFolderStorage';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
@@ -78,6 +78,11 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
         return false;
       }
     }
+    // This browser's own boards are never replaced without asking.
+    if (target.kind === 'browser' && (await browserHasBoards())) {
+      setConflict(target);
+      return false;
+    }
     if (target.kind === 'webfolder' && (await webFolderHasWorkspace(target.id))) {
       setConflict(target);
       return false;
@@ -152,7 +157,7 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
     });
 
   const conflictPlace =
-    conflict?.kind === 'drive' ? 'Your Google Drive' : conflict?.kind === 'onedrive' ? 'Your OneDrive' : conflict?.kind === 'webfolder' ? `The “${conflict.name}” folder` : 'That folder';
+    conflict?.kind === 'drive' ? 'Your Google Drive' : conflict?.kind === 'onedrive' ? 'Your OneDrive' : conflict?.kind === 'webfolder' ? `The “${conflict.name}” folder` : conflict?.kind === 'browser' ? 'This browser' : 'That folder';
   const cloudName = drive ? 'Google Drive' : 'OneDrive';
   const oneDriveHere = microsoftConfigured() && microsoftAllowedHere();
   // Google only lets the website sign in from its registered addresses.

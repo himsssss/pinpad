@@ -120,7 +120,8 @@ export function Sidebar() {
       e.preventDefault();
       e.stopPropagation();
       if (board) fileBoard(board, folderId);
-      if (folder && folder !== folderId) moveFolder(folder, folderId || undefined);
+      // Dropped where it already is: nothing changes (no reorder, no undo step).
+      if (folder && folder !== folderId && (doc.folders[folder]?.parentId ?? '') !== folderId) moveFolder(folder, folderId || undefined);
     },
   });
   const isDropping = (key: string) => canvasDrop === key || htmlDrop === key;
@@ -200,7 +201,7 @@ export function Sidebar() {
           </span>
         </div>
         {!f.collapsed && (
-          <div className="folder-items">
+          <div className="folder-items" {...dropZone(f.id, { boards: true, folders: true })}>
             {subfolders.map(folderNode)}
             {items.map(projectRow)}
             {items.length === 0 && subfolders.length === 0 && <p className="sidebar-empty">Drag projects here</p>}
