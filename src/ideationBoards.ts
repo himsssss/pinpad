@@ -6,7 +6,7 @@
  * website) those sidebar folders are real folders.
  */
 import { createElement, maxZ, projects, uid } from './doc';
-import { browserHasBoards, getState, mutate, openBoard, switchStorage, usingWebFolder, whenOpened } from './store';
+import { browserHasBoards, getState, mutate, openBoard, setUI, switchStorage, usingWebFolder, whenOpened } from './store';
 import { currentWebFolder } from './webFolderStorage';
 
 export type TrackerBrief = { project: string; brief: string; year: string; month: string };
@@ -107,4 +107,7 @@ export async function openTrackerBrief() {
   await whenOpened();
   const id = fileBriefBoard(b);
   if (id && getState().doc.boards[id]) openBoard(id);
+  // Opened from Creative Tracker: the board gets the room, with the folders tucked away (the
+  // button by the logo, or the shortcut, brings them back).
+  setUI({ sidebarOpen: false });
 }
