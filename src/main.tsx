@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/react';
 import { initStore } from './store';
 import { App } from './App';
 import { SignInGate } from './components/SignInPage';
-import { accountsConfigured, signInWithTracker } from './pinpadAccount';
+import { accountsConfigured, pinpadAccount, signInWithTracker } from './pinpadAccount';
 import { keepTrackerBrief } from './ideationBoards';
 import { registerServiceWorker } from './serviceWorker';
 import '@fontsource-variable/dm-sans/index.css';
@@ -41,8 +41,22 @@ const fromLink = new URLSearchParams(location.hash.slice(1));
 const fromTracker = fromLink.get('tracker');
 keepTrackerBrief(fromLink);
 if (fromTracker || fromLink.has('brief')) history.replaceState(null, '', location.pathname + location.search);
+/** The tracker user the pass is for (its uid claim), so an already signed-in one needn't wait. */
+function passUid(token: string): string | null {
+  try {
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).uid ?? null;
+  } catch {
+    return null;
+  }
+}
+const signIn = (token: string) =>
+  signInWithTracker(token).catch((err) => console.warn('Creative Tracker sign-in:', err instanceof Error ? err.message : err));
+// Already signed in as this tracker user (the usual case): Pinpad opens at once and the sign-in
+// is renewed meanwhile; someone else, or nobody, waits for it (under a second) so the right boards open.
 const trackerSignIn = fromTracker && accountsConfigured()
-  ? signInWithTracker(fromTracker).catch((err) => console.warn('Creative Tracker sign-in:', err instanceof Error ? err.message : err))
+  ? passUid(fromTracker) && passUid(fromTracker) === pinpadAccount()?.uid
+    ? (void signIn(fromTracker), Promise.resolve())
+    : signIn(fromTracker)
   : Promise.resolve();
 
 trackerSignIn.then(initStore).then(() => {
