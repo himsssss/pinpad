@@ -641,6 +641,9 @@ async function flush() {
 }
 
 /** Whether some change hasn't reached storage yet (checked without waiting, for the website's leave warning). */
+/** Nothing would be lost by reloading now: everything is saved and nobody is editing a card. */
+export const safeToReload = () => !hasUnsavedNow() && !state.ui.editingId && !state.ui.dropTarget;
+
 function hasUnsavedNow() {
   // Boards that couldn't be opened only count once something was changed meanwhile (below).
   const error = state.storageError && !state.storageError.startsWith(SYNC_ERROR) && !fileBlocked;
