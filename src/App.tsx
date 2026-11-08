@@ -20,7 +20,6 @@ import { ContextMenu } from './components/ContextMenu';
 import { addElementAtCenter } from './actions';
 import { needsProject } from './doc';
 import { openTrackerBrief } from './ideationBoards';
-import { watchTrackerBoards } from './trackerPreview';
 
 const isTypingTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement && !!t.closest('input, textarea, [contenteditable="true"]');
@@ -165,7 +164,6 @@ export function App() {
   // Creative Tracker's "Open board": that brief's board, in the Ideation boards folder.
   useEffect(() => {
     openTrackerBrief().catch((err) => tell("Couldn't open the brief's board", err instanceof Error ? err.message : String(err)));
-    watchTrackerBoards();
   }, []);
 
   // A shared link (#board=… or #folder=…) opens that board or folder straight away.

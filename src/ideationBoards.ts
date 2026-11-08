@@ -9,14 +9,11 @@ import { createElement, maxZ, projects, uid } from './doc';
 import { browserHasBoards, getState, mutate, openBoard, setUI, switchStorage, usingWebFolder, whenOpened } from './store';
 import { currentWebFolder } from './webFolderStorage';
 
-/** `key` and `url`: the tracker's key for the brief and its address, for board pictures (trackerPreview.ts). */
-export type TrackerBrief = { project: string; brief: string; year: string; month: string; key?: string; url?: string };
+export type TrackerBrief = { project: string; brief: string; year: string; month: string };
 
 export const IDEATION_FOLDER_NAME = 'Ideation boards';
 /** The brief being opened, until Pinpad has opened (sessionStorage: survives the sign-in page). */
 const PENDING_KEY = 'pinpad:tracker-brief';
-/** The last brief opened in this tab, kept so a version switch right after (serviceWorker.ts) still links its board. */
-const LAST_KEY = 'pinpad:tracker-brief-last';
 /**
  * Set by the first version, which opened a picked "Ideation boards" folder in place of the boards
  * already open (hiding "This browser" in Chrome and Edge). Seeing it sends Pinpad back, once.
@@ -27,12 +24,8 @@ const OLD_FOLDER_KEY = 'pinpad:ideation-folder';
 export function keepTrackerBrief(params: URLSearchParams) {
   const brief = { project: params.get('project'), brief: params.get('brief'), year: params.get('year'), month: params.get('month') };
   if (!Object.values(brief).every((v) => v?.trim())) return;
-  const key = params.get('key');
-  const url = params.get('api');
-  const tracker = key && url && /^https?:\/\//.test(url) ? { key, url: url.replace(/\/+$/, '') } : {};
   try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ ...brief, ...tracker }));
-    sessionStorage.setItem(LAST_KEY, JSON.stringify({ ...brief, ...tracker }));
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify(brief));
   } catch {
     // Without storage the brief's board just isn't opened.
   }
@@ -79,18 +72,15 @@ export function fileBriefBoard(b: TrackerBrief): string {
     // Opened before: the one in its month folder, else one moved elsewhere (never a second copy).
     const all = projects(d);
     const existing = all.find((p) => p.folderId === parentId && same(p.title, title)) ?? all.find((p) => same(p.title, title));
-    const tracker = b.key && b.url ? { key: b.key, url: b.url } : undefined;
     if (existing) {
       boardId = existing.id;
-      const board = d.boards[existing.id];
-      if (tracker && (board.tracker?.key !== tracker.key || board.tracker?.url !== tracker.url)) board.tracker = tracker;
       return;
     }
     const onHome = Object.values(d.elements).filter((e) => e.boardId === d.rootId && !e.columnId && e.type !== 'line');
     const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
     const { el, board } = createElement('board', d.rootId, x, 80, maxZ(d) + 1);
     if (!board) return;
-    Object.assign(board, { title, folderId: parentId, ...(tracker ? { tracker } : {}) });
+    Object.assign(board, { title, folderId: parentId });
     d.elements[el.id] = el;
     d.boards[board.id] = board;
     boardId = board.id;
@@ -116,25 +106,11 @@ async function leaveOldIdeationFolder() {
   }
 }
 
-/** After a reload (a version switch): the brief opened before it keeps its link to the tracker, without reopening it. */
-async function relinkLastBrief() {
-  let last: TrackerBrief | null = null;
-  try {
-    last = JSON.parse(sessionStorage.getItem(LAST_KEY) ?? 'null');
-  } catch {
-    return;
-  }
-  if (!last?.key || !last.url) return;
-  await whenOpened();
-  const linked = Object.values(getState().doc.boards).some((bd) => bd.tracker?.key === last!.key && bd.tracker?.url === last!.url);
-  if (!linked && projects(getState().doc).some((p) => same(p.title, `${last!.project} ${last!.brief}`))) fileBriefBoard(last);
-}
-
 /** Opens the brief the tracker sent, if any, at its board in the boards already open. */
 export async function openTrackerBrief() {
   await leaveOldIdeationFolder();
   const b = pendingTrackerBrief();
-  if (!b) return relinkLastBrief();
+  if (!b) return;
   await whenOpened();
   const id = fileBriefBoard(b);
   if (id && getState().doc.boards[id]) openBoard(id);
