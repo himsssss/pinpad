@@ -4,7 +4,7 @@
  * the page offers to switch to it (UpdatePrompt), so the open boards never lose their files.
  */
 
-import { flushNow } from './store';
+import { flushNow, safeToReload } from './store';
 
 let waiting: ServiceWorker | null = null;
 const listeners = new Set<() => void>();
@@ -20,7 +20,36 @@ const offer = (worker: ServiceWorker) => {
   waiting = worker;
   if (Date.now() - startedAt < QUIET_START_MS) return void updateNow();
   listeners.forEach((l) => l());
+  switchWhenQuiet();
 };
+
+/** Untouched this long (no clicks, keys or scrolling), Pinpad is idle enough to switch. */
+const IDLE_MS = 60_000;
+let lastInput = Date.now();
+let watchingQuiet = false;
+
+/** Someone typing in a field (renaming a folder, the search box) or answering a dialog isn't interrupted. */
+const busyOnPage = () => {
+  const el = document.activeElement as HTMLElement | null;
+  return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) || !!document.querySelector('[role="dialog"], [role="alertdialog"]');
+};
+
+function switchIfQuiet() {
+  if (waiting && safeToReload() && !busyOnPage()) void updateNow();
+}
+
+/**
+ * A new version that arrives while Pinpad is open is switched to without asking once it's safe:
+ * when the tab is put in the background, or after a minute without use, with everything saved
+ * and nobody editing. Until then "A new version is ready" offers it as before.
+ */
+function switchWhenQuiet() {
+  if (watchingQuiet) return;
+  watchingQuiet = true;
+  for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => (lastInput = Date.now()), { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && switchIfQuiet());
+  setInterval(() => Date.now() - lastInput > IDLE_MS && switchIfQuiet(), 10_000);
+}
 
 export function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
