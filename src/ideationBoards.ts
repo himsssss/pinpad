@@ -135,11 +135,21 @@ export async function openTrackerBrief() {
   await leaveOldIdeationFolder();
   const b = pendingTrackerBrief();
   if (!b) return relinkLastBrief();
-  await whenOpened();
-  const id = fileBriefBoard(b);
-  if (id && getState().doc.boards[id]) openBoard(id);
-  donePending();
+  // Opened at once from this device's copy of the boards while the folder or Drive is still being
+  // read (a network drive takes a few seconds). The read usually finds the same boards and keeps
+  // this one; if it found changes made elsewhere it replaces the copy, so the board is filed (or
+  // found) again in what it read.
+  const first = fileBriefBoard(b);
+  if (first && getState().doc.boards[first]) openBoard(first);
   // Opened from Creative Tracker: the board gets the room, with the folders tucked away (the
   // button by the logo, or the shortcut, brings them back).
   setUI({ sidebarOpen: false });
+  await whenOpened();
+  const { doc, ui } = getState();
+  if (!doc.boards[first] || ui.boardId !== first) {
+    const id = fileBriefBoard(b);
+    // Still on this brief (not moved on to something else meanwhile).
+    if (id && getState().doc.boards[id] && (ui.boardId === first || ui.boardId === doc.rootId)) openBoard(id);
+  }
+  donePending();
 }
