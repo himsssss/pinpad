@@ -8,7 +8,7 @@ import { cacheAll, moveAttachment, settlePending, storeAttachment, trashAttachme
 import { nativeStorage, type NativeStorage, type StorageBatch } from './native';
 import { driveStorage } from './driveStorage';
 import { oneDriveStorage } from './oneDriveStorage';
-import { allowWebFolder, currentWebFolder, FolderAccessNeeded, setCurrentWebFolder, webFolderStorage, webFoldersSupported } from './webFolderStorage';
+import { allowWebFolder, currentWebFolder, FolderAccessNeeded, FolderGone, setCurrentWebFolder, webFolderStorage, webFoldersSupported } from './webFolderStorage';
 import { microsoftAccount } from './microsoftAuth';
 import { googleAccount, preloadGoogle, renewWebToken, SignInNeeded, webTokenExpiring } from './googleAuth';
 import { rememberSummary } from './placeSummaries';
@@ -346,6 +346,8 @@ function errorText(err: unknown) {
   if (/EACCES|EPERM|permission/i.test(message)) return 'Pinpad isn’t allowed to write in that folder';
   if (/ENOSPC/.test(message)) return 'the disk is full';
   if (/ENOENT/.test(message)) return 'the folder can’t be found';
+  if (err instanceof FolderGone) return 'it was moved, renamed or deleted on this computer';
+  if (/could not be found at the time/i.test(message)) return 'the folder or a file in it was moved or deleted';
   return message;
 }
 
@@ -931,6 +933,7 @@ export async function initStore() {
 const needsSignIn = (err: unknown) => err instanceof SignInNeeded && !(err instanceof FolderAccessNeeded);
 
 function openError(err: unknown) {
+  if (err instanceof FolderGone) return `${err.message} Your boards are safe on this device: click the red dot and choose the folder again (or another one) to save them there.`;
   if (err instanceof FolderAccessNeeded) return `${err.message} Click anywhere to allow it; until then you're seeing the copy saved in this browser.`;
   if (needsSignIn(err)) {
     return `Your ${placeName()} sign-in has run out, so nothing is being saved there. Your changes are kept on this device and saved to ${placeName()} once you sign in again (click the Pinpad logo).`;
