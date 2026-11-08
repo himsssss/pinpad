@@ -8,9 +8,17 @@ import { flushNow } from './store';
 
 let waiting: ServiceWorker | null = null;
 const listeners = new Set<() => void>();
+/**
+ * A new version found just after Pinpad opened (it's checked on every visit) is switched to at
+ * once, before anyone has started working: otherwise each visit runs the previous version until
+ * Update is clicked (and a link from Creative Tracker is handled by that old version).
+ */
+const QUIET_START_MS = 20_000;
+const startedAt = Date.now();
 
 const offer = (worker: ServiceWorker) => {
   waiting = worker;
+  if (Date.now() - startedAt < QUIET_START_MS) return void updateNow();
   listeners.forEach((l) => l());
 };
 
