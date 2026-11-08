@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, FolderOpen, HardDrive, X } from 'lucide-react';
 import { afterSignIn, browserHasBoards, cloudInUse, switchStorage, usingWebFolder, useStore, type StorageTarget } from '../store';
-import { allowWebFolder, chooseWebFolder, currentWebFolder, webFolderHasWorkspace, webFoldersSupported } from '../webFolderStorage';
+import { allowWebFolder, chooseWebFolder, currentWebFolder, forgetWebFolder, webFolderExists, webFolderHasWorkspace, webFoldersSupported } from '../webFolderStorage';
 import { nativeStorage, type StorageLocation } from '../native';
 import { driveStorage } from '../driveStorage';
 import { oneDriveStorage } from '../oneDriveStorage';
@@ -147,9 +147,13 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
 
   const chooseFolder = () =>
     run(async () => {
+      const old = webFolder;
       const folder = await chooseWebFolder();
-      if (folder && folder.id !== webFolder?.id) await moveTo({ kind: 'webfolder', ...folder });
+      if (!folder || folder.id === old?.id) return;
+      // A folder that's gone (moved or deleted) leaves the list once its boards are somewhere else.
+      if ((await moveTo({ kind: 'webfolder', ...folder })) && old && !(await webFolderExists(old.id).catch(() => true))) await forgetWebFolder(old.id);
     });
+  const folderGone = !!storageError && /moved, renamed or deleted/.test(storageError);
 
   const allowFolder = () =>
     run(async () => {
@@ -325,12 +329,12 @@ export function StorageDialog({ onClose }: { onClose: () => void }) {
                 <button className="btn-primary" disabled={busy} onClick={changeFolder}>Change folder…</button>
               </>
             )}
-            {tab === 'local' && webFolder && storageError && (
+            {tab === 'local' && webFolder && storageError && !folderGone && (
               <button className="btn-secondary" disabled={busy} onClick={allowFolder}>Allow access</button>
             )}
             {tab === 'local' && pickFolders && (
-              <button className={webFolder || cloud ? 'btn-secondary' : 'btn-primary'} disabled={busy} onClick={chooseFolder}>
-                {webFolder ? 'Change folder…' : 'Choose a folder…'}
+              <button className={(webFolder || cloud) && !folderGone ? 'btn-secondary' : 'btn-primary'} disabled={busy} onClick={chooseFolder}>
+                {folderGone ? 'Choose the folder again…' : webFolder ? 'Change folder…' : 'Choose a folder…'}
               </button>
             )}
             {tab === 'local' && !storage && !pickFolders && cloud && (

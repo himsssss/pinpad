@@ -35,6 +35,26 @@ export class FolderAccessNeeded extends SignInNeeded {
   }
 }
 
+/** The picked folder isn't there any more (moved, renamed or deleted on the computer). */
+export class FolderGone extends Error {
+  constructor(name: string) {
+    super(`The “${name}” folder was moved, renamed or deleted on this computer, so Pinpad can't save there.`);
+  }
+}
+
+/** Whether a picked folder is still where it was. */
+export async function webFolderExists(id: string) {
+  const folder = await find(id);
+  if (!folder) return false;
+  try {
+    for await (const _ of entries(folder.handle)) break;
+    return true;
+  } catch (err) {
+    if (missing(err)) return false;
+    throw err;
+  }
+}
+
 /**
  * Whether this browser can keep boards in a folder (Chrome and Edge). Where it can, the
  * website offers a folder instead of "This browser"; Safari and Firefox keep "This browser".
@@ -136,6 +156,9 @@ async function root(): Promise<Dir> {
   const folder = current && (await find(current.id));
   if (!current || !folder) throw new Error('The folder Pinpad saved to has been removed from this browser');
   if (!(await allowWebFolder(current.id, false))) throw new FolderAccessNeeded(folder.name);
+  // Checked once per handle: a deleted folder otherwise fails every read and save with
+  // "a requested file or directory could not be found".
+  if (!(await webFolderExists(current.id))) throw new FolderGone(folder.name);
   handle = folder.handle;
   return handle;
 }
