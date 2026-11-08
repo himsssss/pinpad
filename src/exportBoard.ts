@@ -35,36 +35,44 @@ function download(blob: Blob, name: string) {
  * Draws every card on the board (not just the visible part) into an image data URL: PNG
  * for the image export, JPEG inside PDFs (a PNG there would make the file many times larger).
  */
-async function capture(type: 'png' | 'jpeg') {
+async function capture(type: 'png' | 'jpeg', quiet?: { maxSide: number; quality: number }) {
   const world = document.querySelector<HTMLElement>('.world');
   const ids = [...document.querySelectorAll<HTMLElement>('.card.free')].map((n) => n.dataset.elId!);
   const boxes = ids.map(worldRect).filter((b): b is NonNullable<typeof b> => !!b);
   if (!world || !boxes.length) throw new Error('This board is empty');
 
-  // Selection outlines and text carets don't belong in the picture.
-  setUI({ selection: [], editingId: null, editPoint: null, playingId: null });
-  await nextFrame();
-  await nextFrame();
+  // Selection outlines and text carets don't belong in the picture. A quiet picture (taken while
+  // someone works) leaves the selection alone and just leaves those parts out.
+  if (!quiet) {
+    setUI({ selection: [], editingId: null, editPoint: null, playingId: null });
+    await nextFrame();
+    await nextFrame();
+  }
 
   const minX = Math.min(...boxes.map((b) => b.x)) - PAD;
   const minY = Math.min(...boxes.map((b) => b.y)) - PAD;
   const width = Math.ceil(Math.max(...boxes.map((b) => b.x + b.w)) - minX + PAD);
   const height = Math.ceil(Math.max(...boxes.map((b) => b.y + b.h)) - minY + PAD);
-  const pixelRatio = Math.min(2, MAX_SIDE / Math.max(width, height));
+  const pixelRatio = Math.min(quiet ? 1 : 2, (quiet?.maxSide ?? MAX_SIDE) / Math.max(width, height));
   const background = getComputedStyle(document.body).getPropertyValue('--board').trim() || '#f3f3f7';
 
   const { toJpeg, toPng } = await import('html-to-image');
   const image = await (type === 'png' ? toPng : toJpeg)(world, {
-    quality: 0.92,
+    quality: quiet?.quality ?? 0.92,
     width,
     height,
     pixelRatio,
     backgroundColor: background,
     imagePlaceholder: BLANK,
     style: { transform: `translate(${-minX}px, ${-minY}px)` },
-    filter: (node) => !(node instanceof Element && node.matches(HIDDEN)),
+    filter: (node) => !(node instanceof Element && node.matches(quiet ? `${HIDDEN}, .selection-box, .marquee` : HIDDEN)),
   });
   return { image, width, height };
+}
+
+/** A small JPEG of the board on screen, taken without disturbing whoever is working on it. */
+export async function boardSnapshot(maxSide = 960) {
+  return (await capture('jpeg', { maxSide, quality: 0.72 })).image;
 }
 
 export async function exportBoardImage() {

@@ -9,7 +9,8 @@ import { createElement, maxZ, projects, uid } from './doc';
 import { browserHasBoards, getState, mutate, openBoard, setUI, switchStorage, usingWebFolder, whenOpened } from './store';
 import { currentWebFolder } from './webFolderStorage';
 
-export type TrackerBrief = { project: string; brief: string; year: string; month: string };
+/** `key` and `url`: the tracker's key for the brief and its address, for board pictures (trackerPreview.ts). */
+export type TrackerBrief = { project: string; brief: string; year: string; month: string; key?: string; url?: string };
 
 export const IDEATION_FOLDER_NAME = 'Ideation boards';
 /** The brief being opened, until Pinpad has opened (sessionStorage: survives the sign-in page). */
@@ -24,8 +25,11 @@ const OLD_FOLDER_KEY = 'pinpad:ideation-folder';
 export function keepTrackerBrief(params: URLSearchParams) {
   const brief = { project: params.get('project'), brief: params.get('brief'), year: params.get('year'), month: params.get('month') };
   if (!Object.values(brief).every((v) => v?.trim())) return;
+  const key = params.get('key');
+  const url = params.get('api');
+  const tracker = key && url && /^https?:\/\//.test(url) ? { key, url: url.replace(/\/+$/, '') } : {};
   try {
-    sessionStorage.setItem(PENDING_KEY, JSON.stringify(brief));
+    sessionStorage.setItem(PENDING_KEY, JSON.stringify({ ...brief, ...tracker }));
   } catch {
     // Without storage the brief's board just isn't opened.
   }
@@ -65,15 +69,18 @@ export function fileBriefBoard(b: TrackerBrief): string {
     // Opened before: the one in its month folder, else one moved elsewhere (never a second copy).
     const all = projects(d);
     const existing = all.find((p) => p.folderId === parentId && same(p.title, title)) ?? all.find((p) => same(p.title, title));
+    const tracker = b.key && b.url ? { key: b.key, url: b.url } : undefined;
     if (existing) {
       boardId = existing.id;
+      const board = d.boards[existing.id];
+      if (tracker && (board.tracker?.key !== tracker.key || board.tracker?.url !== tracker.url)) board.tracker = tracker;
       return;
     }
     const onHome = Object.values(d.elements).filter((e) => e.boardId === d.rootId && !e.columnId && e.type !== 'line');
     const x = onHome.length ? Math.max(...onHome.map((e) => e.x + e.w)) + 40 : 80;
     const { el, board } = createElement('board', d.rootId, x, 80, maxZ(d) + 1);
     if (!board) return;
-    Object.assign(board, { title, folderId: parentId });
+    Object.assign(board, { title, folderId: parentId, ...(tracker ? { tracker } : {}) });
     d.elements[el.id] = el;
     d.boards[board.id] = board;
     boardId = board.id;

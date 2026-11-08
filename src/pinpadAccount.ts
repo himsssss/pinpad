@@ -145,6 +145,9 @@ export function signOutOfPinpad() {
   keep(null);
 }
 
+/** A valid sign-in token for the account (proves who's signed in, e.g. to Creative Tracker). */
+export const pinpadIdToken = () => idToken();
+
 /** A valid token for the account, renewed when it has run out; signs out if it can't be. */
 async function idToken(): Promise<string | null> {
   const account = current;

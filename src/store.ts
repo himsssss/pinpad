@@ -46,6 +46,8 @@ const subscribe = (l: () => void) => {
 };
 
 export const getState = () => state;
+/** Called after every change to the state (outside React; components use useStore). */
+export const subscribeStore = (l: () => void) => subscribe(l);
 
 export function useStore<T>(selector: (s: State) => T): T {
   return useSyncExternalStore(subscribe, () => selector(state));
