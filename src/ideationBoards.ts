@@ -15,6 +15,8 @@ export type TrackerBrief = { project: string; brief: string; year: string; month
 export const IDEATION_FOLDER_NAME = 'Ideation boards';
 /** The brief being opened, until Pinpad has opened (sessionStorage: survives the sign-in page). */
 const PENDING_KEY = 'pinpad:tracker-brief';
+/** The last brief opened in this tab, kept so a version switch right after (serviceWorker.ts) still links its board. */
+const LAST_KEY = 'pinpad:tracker-brief-last';
 /**
  * Set by the first version, which opened a picked "Ideation boards" folder in place of the boards
  * already open (hiding "This browser" in Chrome and Edge). Seeing it sends Pinpad back, once.
@@ -30,18 +32,26 @@ export function keepTrackerBrief(params: URLSearchParams) {
   const tracker = key && url && /^https?:\/\//.test(url) ? { key, url: url.replace(/\/+$/, '') } : {};
   try {
     sessionStorage.setItem(PENDING_KEY, JSON.stringify({ ...brief, ...tracker }));
+    sessionStorage.setItem(LAST_KEY, JSON.stringify({ ...brief, ...tracker }));
   } catch {
     // Without storage the brief's board just isn't opened.
   }
 }
 
-function takeTrackerBrief(): TrackerBrief | null {
+/** The brief waiting to be opened; it stays until its board is open, so a reload part-way (a version switch) still opens it. */
+function pendingTrackerBrief(): TrackerBrief | null {
   try {
-    const brief = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null');
-    sessionStorage.removeItem(PENDING_KEY);
-    return brief;
+    return JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? 'null');
   } catch {
     return null;
+  }
+}
+
+function donePending() {
+  try {
+    sessionStorage.removeItem(PENDING_KEY);
+  } catch {
+    // Nothing kept, nothing to clear.
   }
 }
 
@@ -106,14 +116,29 @@ async function leaveOldIdeationFolder() {
   }
 }
 
+/** After a reload (a version switch): the brief opened before it keeps its link to the tracker, without reopening it. */
+async function relinkLastBrief() {
+  let last: TrackerBrief | null = null;
+  try {
+    last = JSON.parse(sessionStorage.getItem(LAST_KEY) ?? 'null');
+  } catch {
+    return;
+  }
+  if (!last?.key || !last.url) return;
+  await whenOpened();
+  const linked = Object.values(getState().doc.boards).some((bd) => bd.tracker?.key === last!.key && bd.tracker?.url === last!.url);
+  if (!linked && projects(getState().doc).some((p) => same(p.title, `${last!.project} ${last!.brief}`))) fileBriefBoard(last);
+}
+
 /** Opens the brief the tracker sent, if any, at its board in the boards already open. */
 export async function openTrackerBrief() {
   await leaveOldIdeationFolder();
-  const b = takeTrackerBrief();
-  if (!b) return;
+  const b = pendingTrackerBrief();
+  if (!b) return relinkLastBrief();
   await whenOpened();
   const id = fileBriefBoard(b);
   if (id && getState().doc.boards[id]) openBoard(id);
+  donePending();
   // Opened from Creative Tracker: the board gets the room, with the folders tucked away (the
   // button by the logo, or the shortcut, brings them back).
   setUI({ sidebarOpen: false });
