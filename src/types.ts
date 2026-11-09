@@ -101,11 +101,6 @@ export interface Board {
   folderId?: string;
   /** When the board or a card on it last changed (ms since 1970); absent on older boards. */
   updatedAt?: number;
-  /**
-   * A Creative Tracker brief's board (ideationBoards.ts): the tracker's key for the brief and its
-   * address, where a picture of the board is sent after changes (trackerPreview.ts).
-   */
-  tracker?: { key: string; url: string };
 }
 
 export interface Folder {
